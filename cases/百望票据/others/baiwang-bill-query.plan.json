@@ -1,0 +1,73 @@
+{
+  "case_id": "baiwang-bill-query",
+  "name": "百望电子票据平台-登录并查询",
+  "url": "http://cs-electronic-bills-ng-http.default.hw-bw-prd-1.prd.baiwang.com",
+  "steps": [
+    {
+      "goal": "打开系统登录页，使用 账号 / 密码 登录，进入系统主页面",
+      "checks": [
+        {
+          "kind": "element_exists",
+          "value": "查询",
+          "expected": "查询",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    },
+    {
+      "goal": "在查询条件中把行政区域选择为 2102 大连",
+      "checks": [
+        {
+          "kind": "element_exists",
+          "value": "2102 大连",
+          "expected": "2102 大连",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    },
+    {
+      "goal": "点击查询，等待票据列表加载完成",
+      "checks": [
+        {
+          "kind": "text_contains",
+          "value": "票据类型",
+          "expected": "票据类型",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "text_contains",
+          "value": "缴款人",
+          "expected": "缴款人",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "element_absent",
+          "value": "暂无数据",
+          "expected": "暂无数据",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    }
+  ],
+  "vars": {
+    "账号": "${{secret.账号}}",
+    "密码": "${{secret.密码}}"
+  },
+  "notes": ""
+}

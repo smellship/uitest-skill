@@ -1,0 +1,32 @@
+id: bing-search-paging
+title: 必应搜索大肥鱼并翻到第二页
+priority: P1
+tags: [冒烟, 搜索, 分页]
+env: bing
+
+vars:
+  输入搜索词: 大肥鱼
+
+steps:
+  - goal: 在必应搜索框输入「大肥鱼」并点击搜索按钮，等待搜索结果页加载完成
+    checks:
+      # 结果页 URL 带 q= 参数即证明搜索已提交（不是靠模型自称 DONE）
+      - url_contains: /search?q=
+      - text_contains: 大肥鱼
+
+  - goal: |
+      向下滚动到页面底部的分页区域，点击一次「下一页」，进入搜索结果第二页。
+      到达第二页后立刻报告 DONE，不要再继续点下一页。
+    checks:
+      # Bing 分页靠 URL 的 first 参数标识，但**具体数值随会话变化**
+      # （实测见过 first=10、first=11、first=20…）。所以只断言「这个字段出现了」，
+      # 不钉具体值 —— 钉死会让正确的运行被误判失败。
+      # 第一页没有 first；一旦翻页，first 必然出现。
+      - url_contains: first=
+
+  - goal: |
+      确认当前停留在搜索结果第二页（分页区显示页码），然后结束本次运行，不再翻页。
+    checks:
+      - url_contains: first=
+      - element_exists: 下一页
+      - text_contains: 大肥鱼

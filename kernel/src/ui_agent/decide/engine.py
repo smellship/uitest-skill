@@ -1,0 +1,47 @@
+"""决策引擎工厂：按 UI_AGENT_DECIDER 在 Jev / 大模型代班 / 宿主 agent / 关闭之间选，两个 runner 共用。
+
+agent 档走文件桥（`bridge`），由 CLI 装配后传进来——Runner 的 __init__ 早于 run_dir 确定，
+不能在这里猜桥路径；缺桥是装配错误，不是运行时错误，直接抛。
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from ui_agent.bridge.client import AgentBridge
+from ui_agent.config import Settings
+from ui_agent.decide.agent_engine import AgentEngine
+from ui_agent.decide.delegate import LlmEngine
+from ui_agent.decide.jev import JevEngine
+from ui_agent.schema.decision import Decision
+from ui_agent.schema.state import State
+
+ENGINE_KINDS = ("jev", "llm", "agent", "off")
+
+
+class Decider(Protocol):
+    def decide(self, state: State, goal: str, rules: list[str] | None = None,
+               error_context: str | None = None) -> Decision: ...
+
+
+class OffEngine:
+    """决策关闭：没有可回放的缓存记录时，一次决策都不做——到点直接停。"""
+
+    def __init__(self, settings: Settings):
+        self.s = settings
+
+    def decide(self, state: State, goal: str, rules: list[str] | None = None,
+               error_context: str | None = None) -> Decision:
+        raise RuntimeError("决策模型已关闭（UI_AGENT_DECIDER=off）：没有可回放的缓存记录；已停止。")
+
+
+def make_engine(settings: Settings, bridge: AgentBridge | None = None) -> Decider:
+    if settings.ui_agent_decider == "llm":
+        return LlmEngine(settings)
+    if settings.ui_agent_decider == "agent":
+        if bridge is None:
+            raise RuntimeError("decider=agent 需要 Agent 桥，但未装配 bridge。")
+        return AgentEngine(settings, bridge)
+    if settings.ui_agent_decider == "off":
+        return OffEngine(settings)
+    return JevEngine(settings)

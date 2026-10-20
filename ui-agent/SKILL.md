@@ -169,8 +169,9 @@ uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
   --run-dir .artifacts/runs/offline-rep --json
 ```
 
-**`--var` 每次都带**：录像只认动作序列，不认变量值，但缺了 `--var` 会让输入动作判不成立，
-录像被当失败牵连淘汰（`write: evicted`）。回放还要用**同一个 `--url`**——键里含环境地址。
+**`--var` 每次都要带同样的键**：录像只认动作序列，不认变量值（实测回放时把
+`账号=sysadmin` 换成 `账号=demo-user` 照样 `hits=6`、`ok`）；但**缺了那个键**，输入动作当场判不成立，
+录像被当失败牵连淘汰（`write: evicted`，之后变 `no-entry`）。回放还要用**同一个 `--url`**——键里含环境地址。
 
 真实站点的例子是 `examples/cases/big-fish.yaml`（必应搜索 + 翻页），把 `--decider agent` 换成
 `--decider jev --url https://cn.bing.com/` 即可，其余同理。

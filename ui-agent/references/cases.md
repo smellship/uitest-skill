@@ -161,7 +161,7 @@ uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
   --decider agent --supervisor off --relearn \
   --var 账号=demo --var 密码=demo --run-dir .artifacts/runs/rec-offline --json
 
-# 零 token 回放：同一个 plan、同一个 --url、同一组 --var
+# 零 token 回放：同一个 plan、同一个 --url、同样那组 --var 键（值可以换）
 uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
   --url "$FIXTURE" \
   --decider off --supervisor off \
@@ -171,8 +171,8 @@ uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
 `file:///$PWD/...` 在 Git Bash 下会拼成 `file:////d/...`（四斜杠），Chromium 打不开。
 Git Bash 用 `cygpath -m "$(pwd)"`，Windows 盘符形式是 `file:///D:/...`（三斜杠 + 正斜杠）。
 
-`--var` 每次都要带：录像只认动作序列，不认变量值；但缺了 `--var`，输入动作会被判不成立，
-录像被当失败牵连淘汰（`write: evicted`）。`--url` 同理——缓存键里含环境地址。
+`--var` 每次都要带同样的**键**：录像只认动作序列，不认变量值（换值照样命中）；但缺了那个键，
+输入动作会被判不成立，录像被当失败牵连淘汰（`write: evicted`）。`--url` 同理——缓存键里含环境地址。
 
 录像只在**断言全过**（`mode=self-finalized`）时才落盘。断言没过时录像保留（因为你可能只是改了断言），
 但要重录才能更新内容——加 `--relearn`。

@@ -1,0 +1,163 @@
+# cases：用例 YAML 的写法与编译口径
+
+YAML 是唯一真源。`case compile` 只信 YAML 本身，不信任何模型；报错带行号。
+
+## 最小可用形状
+
+```yaml
+id: bing-search-paging          # 缓存身份，定了别改
+title: 必应搜索并翻页
+vars:
+  输入搜索词: 大肥鱼              # 键名必须是控件标签的子串
+steps:
+  - goal: 在搜索框输入大肥鱼并回车，等待结果出现
+    checks:
+      - text_contains: 大肥鱼
+      - element_exists: 搜索结果
+  - goal: 点击「下一页」，停在第二页
+    checks:
+      - url_contains: first=
+      - element_exists: 下一页
+```
+
+字段全集：`id` / `title`（或 `name`）/ `notes` / `url` / `vars` / `steps[].{goal,checks,url,note}`。
+**没有别的字段**——`priority`、`owner`、`env` 这些平台表头不在这里。
+
+## 五条硬规则
+
+1. **`id` 是缓存身份。** 有 `id` 时缓存键 = `id:<id>`；没有才退回 `plan_case_hash`（对内容哈希，改一个字的 goal 就换键）。
+   所以：**写了 `id`，改 goal 措辞不会让录像失效**；改 `id` 则必须重录。
+   移动或重命名 YAML 文件**安全**（缓存键不认文件名与 title）。
+2. **步骤数上限 12**（超过给 `too_many_steps` 警告），**每步断言最多 3 条**（`too_many_checks` 警告）。
+3. **每步必须有 `checks`**，空数组直接 `checks_empty` 错误。没有断言 = 未验收。
+4. **最后一步必须含一条「结果类」断言**，否则 `weak_final_check` 警告：
+   `text_contains` / `element_value` / `element_absent` / `element_count` / `element_attribute`。
+   （`url_contains` / `title_contains` / `element_exists` 只证明「到了某个界面」，不证明结果对。）
+5. **`${{secret.X}}` / `${{env.X}}` 只能写在 `vars` 槽位**，写进 `goal` 是 `ref_in_goal` 错误。
+
+## 8 种断言
+
+| kind | 单键写法 | 语义 | 证据来自 |
+|---|---|---|---|
+| `text_contains` | `text_contains: 大肥鱼` | 页面正文含该串 | `state.page.text` |
+| `url_contains` | `url_contains: first=` | 当前 URL 含该串 | `state.page.url` |
+| `title_contains` | `title_contains: 搜索结果` | 页面标题含该串 | `state.page.title` |
+| `element_exists` | `element_exists: 下一页` | 有元素**标签含**该串 | 元素表 label |
+| `element_absent` | `element_absent: 加载中` | 没有元素标签含该串 | 元素表 label |
+| `element_value` | `element_value: 输入搜索词\|大肥鱼` | 标签含左值的控件，其 `value` **恰好等于**右值 | 元素表 value |
+| `element_count` | `element_count: 模拟行\|3` 或 `element_count: 3` | 标签含左值的元素个数恰好 3；只给数字 = 不限标签 | 元素表（`omitted` 时证据会注明「快照截断」）|
+| `element_attribute` | 只能 JSON | 标签含 `value` 的元素，属性 `attr` **恰好等于** `expected` | 实时读 DOM（`get_attribute`）|
+
+`element_attribute` 的完整写法（YAML 里也是这个形状）：
+
+```yaml
+- kind: element_attribute
+  value: 下载使用手册
+  attr: href
+  expected: /manual.pdf
+```
+
+可选修饰：`role`（限定元素 role，如 `role: button`）、`timeout_ms`（单条加宽轮询窗口）。
+
+### 断言的唯一判据：它在步骤前是假的、步骤后是真的
+
+达不到这条的断言比没有断言更糟——它让人以为验过了。
+
+- ❌ `element_exists: 查询`（查询按钮点之前就在页面上）
+- ❌ `element_exists: 登录`（登录成功后「退出登录」仍然匹配）
+- ✅ `text_contains: 已登录：sysadmin`
+- ✅ `element_exists: 票据类型`（只有结果表才有）
+
+### 别钉会漂移的值
+
+- ✅ `url_contains: first=`（翻页后必然出现，具体值实测出现过 10/11/20/90）
+- ❌ `url_contains: first=10`
+- 分页区「上一页」时有时无 → 不能当验收条件。
+
+## vars 规范
+
+`vars` 只放**要填进控件的值**（或上传文件路径），键名必须是控件标签的**子串**：
+
+- ✅ `输入搜索词: 大肥鱼`（控件标签就是「输入搜索词」）
+- ❌ `sa: 大肥鱼`（任何标签都不含 `sa`，该字段永远取不到值；Jev 会每轮选对目标却一直失败）
+
+`match_var` 取**最长匹配键**，所以「账号」不会抢「确认账号」。
+
+敏感值用引用，别写字面量（字面量给 `literal_secret` 警告，密码类键名一律触发）：
+
+```yaml
+vars:
+  账号: ${{secret.账号}}
+  密码: ${{secret.密码}}
+```
+
+`case compile --secret-keys 账号,密码` 会校验引用是否登记过；不给 `--secret-keys` 则跳过该项校验。
+
+## 编译
+
+```bash
+uv run ui-agent case compile --in cases/大肥鱼/bing-search-paging.yaml --json
+```
+
+`--json` 输出 `{ok, errors[], warnings[], plan}`。`errors` 非空时 `plan` 为 null、退出码 **1**。
+
+### 错误码
+
+| code | 触发 | 修法 |
+|---|---|---|
+| `empty_file` | 内容为空 | 写点东西 |
+| `yaml_error` | YAML 语法错（带行号） | 修语法 |
+| `bad_root` | 顶层不是映射 | 加 `steps:` |
+| `duplicate_key` | 同名键出现两次 | 删掉后写的那份 |
+| `bad_name` | `id`/`title`/`name` 含 `/ \ : * ? " < > \|` | 换字符 |
+| `bad_vars` / `bad_var` | `vars` 不是映射 / 值不是标量 | 改成 `键: 标量` |
+| `unknown_secret` | 引用了 `--secret-keys` 未登记的键 | 补登记或改键名 |
+| `steps_empty` | 没有步骤 | 加 `steps:` |
+| `bad_step` | 某步不是映射 | 每步要有 `goal:` 和 `checks:` |
+| `goal_empty` | 某步缺 `goal` | 补上 |
+| `ref_in_goal` | `goal` 里有 `${{secret.…}}` / `${{env.…}}` | 移到 `vars` |
+| `checks_empty` | 某步没有断言 | 写断言（这是最容易反复踩的一条）|
+| `bad_check` | 断言既非单键、又不含 `kind` | 二选一写法 |
+| `bad_kind` | 未知断言类型 | 用上表 8 种 |
+| `empty_check` | 断言没给值 | 补值 |
+| `plan_invalid` | 编译结果过不了 pydantic | 看 message |
+
+### 警告码（不阻塞，但要看）
+
+`hardcoded_url`（用例里写了 `url`，会覆盖环境地址）、`too_many_steps`、`too_many_checks`、
+`literal_secret`（疑似明文敏感值）、`weak_final_check`（最后一步证明不了结果）。
+
+目标不是「编译通过」，是 **0 error 且 0 无关 warning**。
+
+## 从 YAML 到跑：plan.json
+
+`case compile --json` 的 `plan` 是完整计划对象。落成 `others/<用例>.plan.json` 时**要补 `url`**
+（YAML 里刻意不写入口地址，同一份用例要能跑在不同环境）：
+
+```json
+{"case_id": "bing-search-paging", "name": "必应搜索并翻页",
+ "url": "https://cn.bing.com/", "vars": {"输入搜索词": "大肥鱼"}, "steps": [...]}
+```
+
+`run --plan-file` 直接吃这个文件；`--url` 可临时覆盖。
+
+## 首次录制与之后回放
+
+```bash
+# 首次：录制（花 token）。--relearn 让内核忽略已有录像
+uv run ui-agent run --plan-file cases/大肥鱼/others/bing-search-paging.plan.json \
+  --decider jev --supervisor off --relearn --run-dir .artifacts/runs/rec-1 --json
+
+# 之后：零 token 回放
+uv run ui-agent run --plan-file cases/大肥鱼/others/bing-search-paging.plan.json \
+  --decider off --supervisor off --run-dir .artifacts/runs/rep-1 --json
+```
+
+录像只在**断言全过**（`mode=self-finalized`）时才落盘。断言没过时录像保留（因为你可能只是改了断言），
+但要重录才能更新内容——加 `--relearn`。
+
+## 已确认不可行
+
+- **百度全站**：本机 IP 直连就返滑块验证（`wappass.baidu.com/static/captcha`），UI 操作与直连 URL 都被拦。
+  需要搜索/翻页类用例时改用必应。
+- **closed shadow root** 里的控件拿不到（只覆盖 open shadow root），遇到只能放弃，不许猜。

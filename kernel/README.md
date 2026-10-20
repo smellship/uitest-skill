@@ -187,6 +187,41 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 与 `bridge wait/answer` **同一套语义**（同样的校验、预算、缓存、trace），只是传输从 CLI 换成 MCP 工具。
 只有「不能跑后台命令」的宿主才需要它；有 shell 的宿主直接用 bridge 更省进程。
 
+## skill 包：给宿主 agent 看的说明书（M-B）
+
+`skills/ui-agent/` 是随内核同版本发布的 skill，**不含新代码，只描述既有行为**。
+宿主 agent（Qoder skill 目录 / `.claude/skills/` / `npx skills add` 布局）读 `SKILL.md` 决定读哪篇 reference。
+
+```powershell
+# 一条命令自检 / 装环境（幂等；已装的跳过）
+.\skills\ui-agent\scripts\bootstrap.ps1
+.\skills\ui-agent\scripts\bootstrap.ps1 -CheckOnly    # 只报告，不安装
+```
+
+```bash
+./skills/ui-agent/scripts/bootstrap.sh --check        # macOS / Linux
+```
+
+它做四件事并逐条打印：查 `uv` → `uv sync` → 把 chromium 装进 `kernel/.browsers` → 验 `ui-agent --help` 出子命令。
+退出码 0 = 就绪；非 0 会列出哪一步没过。**不碰密钥**，只报告 `.env` 里两个 key 配没配。
+
+skill 内容（8 篇 reference + 双平台 bootstrap）：
+
+| 文件 | 讲什么 |
+|---|---|
+| `SKILL.md` | 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 退出码 |
+| `references/setup.md` | bootstrap / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误 |
+| `references/cases.md` | 用例 YAML 写法、8 种断言、5 种算「业务结果证据」、编译错误码全集 |
+| `references/running.md` | 后台起 run + `bridge wait`/`answer` 循环 + ask 处置表 + 读产物 |
+| `references/supervising.md` | `kind=supervise` 作答契约：四裁决、可用恢复动作、预算、拒绝文案 |
+| `references/deciding.md` | `kind=decide` 作答契约：13 种 operation、probabilities 六条硬规则、目标 head |
+| `references/exploring.md` | explore 四段工作流、产物四件、骨架为什么故意过不了编译 |
+| `references/debugging.md` | trace 词表、cache 词表、11 个停机状态、失配判定、开销旋钮 |
+| `references/security.md` | secret 与非 secret 两条路、落盘边界、探索产物为什么只写来源 |
+
+**planner 缝没有桥**：桥只覆盖 supervise / decide / text 三个缝；planner 由 agent 手写 YAML 替代
+（HTTP 版 `plan` / `case draft` 仍保留给平台用）。
+
 ## 跑一个目标
 
 ```powershell
@@ -401,6 +436,7 @@ uv run ui-agent report --run-dir .artifacts\runs\case-123 --json   # → {ok, re
 | `src/ui_agent/schema/` | 契约：state / decision / check / plan / supervisor / status |
 | `src/ui_agent/report/` | HTML 报告（计划模式读 `summary.json`，单目标读 `result.json`） |
 | `tests/fakes.py` | 离线单测的假驱动、假决策引擎与脚本化监督模型（不起浏览器、不调模型） |
+| `skills/ui-agent/` | 给宿主 agent 读的 skill 包（SKILL.md + 8 篇 reference + 双平台 bootstrap），不含代码 |
 | `.browsers/` | 工作区内置浏览器（gitignore，`scripts/env.ps1` 导出路径） |
 | `.artifacts/` | 持久化 profile、运行产物（gitignore） |
 | `examples/goals/` | 现成的自然语言目标（百望登录、百望全流程） |
@@ -423,11 +459,19 @@ M4（批量回归）未开始。P0（平台契约）已完成：`case compile/dr
 回放缓存（plan.md 第 4 项）内核侧已落地：按「用例哈希 + 环境地址」建键的录制 / 回放（语义重定位、上下文守卫、
 失配交还与自愈回填）、独立严判开关、零模型停机语义，`scripts/smoke_replay.py` 在真实 Chromium 上把守。
 
-M-A 完成（Agent 桥 / skill，2026-10-19）：宿主对话大模型可接替 planner / textfill / supervisor / decide 四个 LLM 缝，
+M-A 完成（Agent 桥 / skill，2026-10-19）：宿主对话大模型可接替 **textfill / supervisor / decide 三个** LLM 缝，
 走 `<run-dir>/bridge/` 下的 `ask-*.json` / `ans-*.json` 文件协议；Jev 决策保留，四档开关 `--decider jev|llm|agent|off`
 与 `--supervisor off|on|agent` 可组合。桥答复与模型输出同等不信任（过原有校验链），不可用即按 M0 停机。
 配套：`explore` 子命令（探索不录制 → 产出轨迹与用例骨架）、YAML `id:` 作缓存身份、仅断言失败时保留录像、`--mask-vars`、
 五个浏览器开销开关、可选 MCP 适配器。
+
+> 注：**planner 缝没有走桥**。桥覆盖的是 supervise / decide / text 三处；planner 在 skill 形态下由 agent 直写用例 YAML
+> 替代（`case compile` 校验到 0 error 再跑），HTTP 版 `plan` / `case draft` 保留给平台用。
+
+M-B 完成（skill 包，2026-10-20）：`skills/ui-agent/` 随内核同版本发布，宿主 agent 读 `SKILL.md` 路由到 8 篇 reference
+（setup / cases / running / supervising / deciding / exploring / debugging / security），配双平台幂等自检脚本
+`scripts/bootstrap.{ps1,sh}`（查 uv → `uv sync` → chromium 装进 `.browsers` → 验 `--help`，退出码 0 = 就绪）。
+skill 只描述既有行为，不含新代码；文档口径按**实际落码**而非 spec 原文（桥超时 180s、断言可用 8 种而 `RESULT_KINDS` 5 种）。
 
 离线单测 **590 项**与十一个冒烟脚本（`smoke_browser` / `smoke_cli` / `smoke_snapshot` / `smoke_plan` / `smoke_supervisor` /
 `smoke_upload` / `smoke_m3` / `smoke_assert` / `smoke_replay` / `smoke_bridge` / `smoke_explore`，或 `run_all_smoke.py` 串跑）全绿；

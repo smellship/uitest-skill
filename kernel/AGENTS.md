@@ -104,6 +104,37 @@
 - 与 skill 形态**同一套语义**：同样的 ask/answer 校验、预算、缓存、trace。
 - server 常驻 ⇒ 一个进程管多个 run；`abort` 按 run_id 终止对应子进程树。
 
+## skill 包（M-B，2026-10-20）
+
+`skills/ui-agent/` 随内核同版本发布，是宿主 agent 读的说明书。**它不含新代码，只描述既有行为**。
+
+```
+skills/ui-agent/
+  SKILL.md                        frontmatter(name+description) + 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面
+  references/
+    setup.md                      bootstrap 脚本 / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误
+    cases.md                      用例 YAML 写法、8 种断言、5 种算「业务结果证据」、编译错误码全集
+    running.md                    后台起 run + bridge wait/answer 循环 + 处置表 + 读产物
+    supervising.md                kind=supervise 的作答契约（RULINGS / RECOVER_OPS / 预算 / 拒绝文案）
+    deciding.md                   kind=decide 的作答契约（operation 13 种 / probabilities 六条硬规则 / 目标 head）
+    exploring.md                  explore 四段工作流 + 产物四件 + 骨架为什么故意过不了编译
+    debugging.md                  trace 词表 / cache 词表 / 11 个停机状态 / 失配判定 / 浏览器开销旋钮
+    security.md                   secret 与非 secret 两条路 / 落盘边界 / 探索产物为什么只写来源
+  scripts/
+    bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 .browsers + 验 --help
+```
+
+写这些文档时必须守住的三条：
+
+1. **只写已落码的事实**。spec 与实际不一致时按实际写，例如桥超时默认 **180s**（spec 里写 600）、
+   断言可用 **8 种**而 `RESULT_KINDS` 只有 **5 种**（两者不是同一件事）。
+2. **planner 缝没有桥**。桥只覆盖 supervise / decide / text 三个缝；planner 由 agent 手写 YAML 替代，
+   不要写成「四个缝都能走桥」。
+3. **不给 agent 编断言的余地**。`explored.yaml` 的 `checks: []` 是故意的，它必须过不了 `case compile`。
+
+`bootstrap.ps1` 必须存成 **UTF-8 with BOM**：Windows PowerShell 5.1 读无 BOM 的 UTF-8 会按 ANSI 解码，
+中文注释里的全角标点会把语法解析带偏，报 `Unexpected token`。`bootstrap.sh` 无此要求。
+
 ## 待办（明确未做，不要误以为已支持）
 
 - **网络请求/响应不可见**。全库没有 `page.on("response")` / `route(` / `wait_for_response` / HAR 任何一处，

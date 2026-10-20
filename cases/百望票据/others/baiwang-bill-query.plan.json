@@ -1,7 +1,7 @@
 {
   "case_id": "baiwang-bill-query",
   "name": "百望电子票据平台-登录并查询",
-  "url": "http://cs-electronic-bills-ng-http.default.hw-bw-prd-1.prd.baiwang.com",
+  "url": "",
   "steps": [
     {
       "goal": "打开系统登录页，使用 账号 / 密码 登录，进入系统主页面",

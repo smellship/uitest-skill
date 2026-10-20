@@ -18,16 +18,20 @@ cases/
 
 ## 索引
 
-| 场景 | 用例 | 入口 |
-|---|---|---|
-| 大肥鱼 | bing-search-paging.yaml | https://cn.bing.com/ |
-| 百望票据 | baiwang-bill-query.yaml | cs-electronic-bills-ng-http.default.hw-bw-prd-1.prd.baiwang.com |
+| 场景 | 用例 | 入口 | 要网络 |
+|---|---|---|---|
+| 大肥鱼 | bing-search-paging.yaml | https://cn.bing.com/ | 要 |
+| 百望票据 | baiwang-bill-query.yaml | cs-electronic-bills-ng-http.default.hw-bw-prd-1.prd.baiwang.com | 要 |
+| 本地夹具 | local-fixture.yaml | `kernel/examples/local_fixture.html`（`file:///`） | 不要 |
+
+本地夹具是**零依赖样例**：不联网、零模型调用，装完即可跑通「录制 → 零 token 回放」。
+它也是 skill 包里 `examples/cases/offline.*` 的来源。
 
 ## 流程
 
 1. 写/改 YAML。
 2. `uv run ui-agent case compile --in <yaml> --json` → 必须 `ok=true`、`errors=[]`。
-3. 取 `plan` 写入 `others/<用例>.plan.json`（并补 `url` 字段）。
+3. 取 `plan` 写入 `others/<用例>.plan.json`。`url` 一般留空（入口由 `--url` 给），要钉死环境才填。
 4. 首次（录制，耗 token）：`run --plan-file <plan> --decider jev`。
 5. 之后（零 token）：`run --plan-file <plan> --decider off --supervisor off`。
 6. 改过断言/步骤 → 加 `--relearn` 重录，否则回放会按旧断言判定。

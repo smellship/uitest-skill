@@ -1,7 +1,7 @@
 {
   "case_id": "bing-search-paging",
   "name": "必应搜索大肥鱼并翻到第二页",
-  "url": "https://cn.bing.com/",
+  "url": "",
   "steps": [
     {
       "goal": "在必应搜索框输入「大肥鱼」并点击搜索按钮，等待搜索结果页加载完成",

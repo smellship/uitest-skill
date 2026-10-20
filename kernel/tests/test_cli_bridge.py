@@ -56,9 +56,41 @@ class TestBridgeWait:
         assert payload["state"] == "finished" and payload["result"]["status"] == "ok"
 
     def test_missing_bridge_dir_exits_2(self, tmp_path, capsys):
-        code = bridge_cli.main(["wait", "--run-dir", str(tmp_path / "nope"), "--json"])
+        code = bridge_cli.main(["wait", "--run-dir", str(tmp_path / "nope"),
+                                "--wait-dir", "0", "--json"])
         assert code == 2
         assert "桥目录不存在" in capsys.readouterr().err
+
+    def test_waits_for_the_bridge_dir_to_appear(self, tmp_path, capsys):
+        """宿主总是「起 run 后立刻 wait」，桥目录要几秒后才出现——不能就此报错退出。"""
+        import threading
+
+        run_dir = tmp_path / "late"
+        folder = run_dir / "bridge"
+
+        def _create():
+            folder.mkdir(parents=True)
+            write_json(folder / "status.json", {"state": "running", "seq": 2, "detail": "",
+                                                "updated_at": "2026-10-19T10:00:00.000"})
+            write_json(folder / "ask-0002.json", {"id": 2, "kind": "decide",
+                                                  "deadline_s": 180.0, "at": "2026-10-19T10:00:00.000",
+                                                  "payload": {"state": {}, "questions": {}}})
+
+        timer = threading.Timer(0.4, _create)
+        timer.start()
+        try:
+            code = bridge_cli.main(["wait", "--run-dir", str(run_dir), "--wait-dir", "5",
+                                    "--timeout", "2", "--json"])
+        finally:
+            timer.join()
+        event = json.loads(capsys.readouterr().out)
+        assert code == 0 and event["event"] == "ask" and event["ask"]["id"] == 2
+
+    def test_wait_dir_timeout_still_reports_missing(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(bridge_cli, "_await_dir", lambda path, seconds: False)
+        code = bridge_cli.main(["wait", "--run-dir", str(tmp_path / "nope"), "--wait-dir", "3", "--json"])
+        err = capsys.readouterr().err
+        assert code == 2 and "桥目录不存在" in err and "等了 3s 仍未出现" in err
 
     def test_json_mode_prints_exactly_one_json_line(self, bridge_run, capsys):
         bridge_cli.main(["wait", "--run-dir", str(bridge_run), "--timeout", "0", "--json"])

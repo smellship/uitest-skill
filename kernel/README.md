@@ -187,23 +187,40 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 与 `bridge wait/answer` **同一套语义**（同样的校验、预算、缓存、trace），只是传输从 CLI 换成 MCP 工具。
 只有「不能跑后台命令」的宿主才需要它；有 shell 的宿主直接用 bridge 更省进程。
 
-## skill 包：给宿主 agent 看的说明书（M-B）
+## skill 包：自足的一整份交付（M-B）
 
-`skills/ui-agent/` 是随内核同版本发布的 skill，**不含新代码，只描述既有行为**。
-宿主 agent（Qoder skill 目录 / `.claude/skills/` / `npx skills add` 布局）读 `SKILL.md` 决定读哪篇 reference。
+`../ui-agent/`（**与 `kernel/` 平级**）是给宿主 agent 用的发布形态。它**自足**：
+文档 + 内核副本 + 样例用例在一个目录里，整个丢进宿主的 skills 目录就能跑，
+宿主不需要再去找开发树。宿主读 `SKILL.md` 决定读哪篇 reference。
+
+```
+ui-agent/
+  SKILL.md       references/       scripts/bootstrap.{ps1,sh}
+  examples/cases/          能直接跑的样例用例
+  kernel/                  ← build_skill.py 生成的内核副本（src / pyproject / uv.lock / …
+                               不含 tests、.venv、.artifacts、.browsers）
+```
 
 ```powershell
-# 一条命令自检 / 装环境（幂等；已装的跳过）
-.\skills\ui-agent\scripts\bootstrap.ps1
-.\skills\ui-agent\scripts\bootstrap.ps1 -CheckOnly    # 只报告，不安装
+# 在 ui-agent/ 下一条命令装环境（幂等；已装的跳过）
+cd ..\ui-agent
+.\scripts\bootstrap.ps1
+.\scripts\bootstrap.ps1 -CheckOnly    # 只报告，零写入
 ```
 
 ```bash
-./skills/ui-agent/scripts/bootstrap.sh --check        # macOS / Linux
+./scripts/bootstrap.sh --check        # macOS / Linux
 ```
 
 它做四件事并逐条打印：查 `uv` → `uv sync` → 把 chromium 装进 `kernel/.browsers` → 验 `ui-agent --help` 出子命令。
 退出码 0 = 就绪；非 0 会列出哪一步没过。**不碰密钥**，只报告 `.env` 里两个 key 配没配。
+
+改完内核要同步这份副本，否则 skill 包里的是旧的：
+
+```bash
+uv run python scripts/build_skill.py            # 同步（先删 ui-agent/kernel 再重建）
+uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1
+```
 
 skill 内容（8 篇 reference + 双平台 bootstrap）：
 
@@ -436,7 +453,8 @@ uv run ui-agent report --run-dir .artifacts\runs\case-123 --json   # → {ok, re
 | `src/ui_agent/schema/` | 契约：state / decision / check / plan / supervisor / status |
 | `src/ui_agent/report/` | HTML 报告（计划模式读 `summary.json`，单目标读 `result.json`） |
 | `tests/fakes.py` | 离线单测的假驱动、假决策引擎与脚本化监督模型（不起浏览器、不调模型） |
-| `skills/ui-agent/` | 给宿主 agent 读的 skill 包（SKILL.md + 8 篇 reference + 双平台 bootstrap），不含代码 |
+| `../ui-agent/` | 自足 skill 包（与 `kernel/` 平级）：SKILL.md + 8 篇 reference + 双平台 bootstrap + 样例用例 + 由 `build_skill.py` 生成的内核副本 |
+| `scripts/build_skill.py` | 把内核最小可运行集同步进 `../ui-agent/kernel/`；`--check` 报漂移 |
 | `.browsers/` | 工作区内置浏览器（gitignore，`scripts/env.ps1` 导出路径） |
 | `.artifacts/` | 持久化 profile、运行产物（gitignore） |
 | `examples/goals/` | 现成的自然语言目标（百望登录、百望全流程） |
@@ -468,10 +486,12 @@ M-A 完成（Agent 桥 / skill，2026-10-19）：宿主对话大模型可接替 
 > 注：**planner 缝没有走桥**。桥覆盖的是 supervise / decide / text 三处；planner 在 skill 形态下由 agent 直写用例 YAML
 > 替代（`case compile` 校验到 0 error 再跑），HTTP 版 `plan` / `case draft` 保留给平台用。
 
-M-B 完成（skill 包，2026-10-20）：`skills/ui-agent/` 随内核同版本发布，宿主 agent 读 `SKILL.md` 路由到 8 篇 reference
+M-B 完成（skill 包，2026-10-20）：`../ui-agent/` 是**自足**的一整份交付——文档 + 内核副本 + 样例用例在一个目录里，
+整个丢进宿主的 skills 目录就能跑。宿主 agent 读 `SKILL.md` 路由到 8 篇 reference
 （setup / cases / running / supervising / deciding / exploring / debugging / security），配双平台幂等自检脚本
 `scripts/bootstrap.{ps1,sh}`（查 uv → `uv sync` → chromium 装进 `.browsers` → 验 `--help`，退出码 0 = 就绪）。
-skill 只描述既有行为，不含新代码；文档口径按**实际落码**而非 spec 原文（桥超时 180s、断言可用 8 种而 `RESULT_KINDS` 5 种）。
+内核副本由 `scripts/build_skill.py` 从开发树生成（`--check` 报漂移），只挑运行必需的文件，约 1 MB，不含 tests / `.venv` / 运行产物。
+文档口径按**实际落码**而非 spec 原文（桥超时 180s、断言可用 8 种而 `RESULT_KINDS` 5 种）。
 
 离线单测 **590 项**与十一个冒烟脚本（`smoke_browser` / `smoke_cli` / `smoke_snapshot` / `smoke_plan` / `smoke_supervisor` /
 `smoke_upload` / `smoke_m3` / `smoke_assert` / `smoke_replay` / `smoke_bridge` / `smoke_explore`，或 `run_all_smoke.py` 串跑）全绿；

@@ -106,10 +106,12 @@
 
 ## skill 包（M-B，2026-10-20）
 
-`skills/ui-agent/` 随内核同版本发布，是宿主 agent 读的说明书。**它不含新代码，只描述既有行为**。
+发布的 skill 包在 **`../ui-agent/`**（与 `kernel/` 平级，**不在 kernel 内**），由
+`scripts/build_skill.py` 从开发树同步生成。**它自足**：文档 + 内核副本 + 样例用例在一起，
+整个目录丢进宿主的 skills 目录就能跑。宿主 agent 读 `SKILL.md` 决定读哪篇 reference。
 
 ```
-skills/ui-agent/
+ui-agent/
   SKILL.md                        frontmatter(name+description) + 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面
   references/
     setup.md                      bootstrap 脚本 / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误
@@ -121,19 +123,48 @@ skills/ui-agent/
     debugging.md                  trace 词表 / cache 词表 / 11 个停机状态 / 失配判定 / 浏览器开销旋钮
     security.md                   secret 与非 secret 两条路 / 落盘边界 / 探索产物为什么只写来源
   scripts/
-    bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 .browsers + 验 --help
+    bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 kernel/.browsers + 验 --help
+  examples/cases/
+    big-fish.yaml + big-fish.plan.json   能直接跑的样例（从仓库 cases/ 挑的）
+  kernel/                         ← build_skill.py 生成：内核最小可运行集（src / pyproject / uv.lock /
+                                     scripts/env.ps1 / scripts/smoke_browser.py），不含 tests 与运行产物
 ```
 
-写这些文档时必须守住的三条：
+**生成与校验**（改内核后必须同步，否则 skill 包里的内核是旧的）：
+
+```bash
+uv run python scripts/build_skill.py            # 同步（只覆盖清单内的文件）
+uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1（CI 用）
+uv run python scripts/build_skill.py --with-tests
+```
+
+`ui-agent/kernel/` 是生成物，一律不可手改：同步会重写清单内的每个文件，并删掉清单外的散落文件。
+**但 `.venv` / `.browsers` / `.artifacts` / `runs` 原样保留**——那是用户跑过 bootstrap 之后的环境
+（约 600 MB），删掉要重装。早期版本整目录 rmtree，把用户环境一起铲了。
+
+写这些文档时必须守住的四条：
 
 1. **只写已落码的事实**。spec 与实际不一致时按实际写，例如桥超时默认 **180s**（spec 里写 600）、
    断言可用 **8 种**而 `RESULT_KINDS` 只有 **5 种**（两者不是同一件事）。
 2. **planner 缝没有桥**。桥只覆盖 supervise / decide / text 三个缝；planner 由 agent 手写 YAML 替代，
    不要写成「四个缝都能走桥」。
 3. **不给 agent 编断言的余地**。`explored.yaml` 的 `checks: []` 是故意的，它必须过不了 `case compile`。
+4. **路径一律相对本包**。文档里不许出现 `skills/ui-agent/`、`cases/大肥鱼/` 这类只对开发树成立的路径；
+   样例统一指 `examples/cases/`，命令一律假设 cwd 在 `kernel/`。
 
 `bootstrap.ps1` 必须存成 **UTF-8 with BOM**：Windows PowerShell 5.1 读无 BOM 的 UTF-8 会按 ANSI 解码，
-中文注释里的全角标点会把语法解析带偏，报 `Unexpected token`。`bootstrap.sh` 无此要求。
+中文注释里的全角标点会把语法解析带偏，报 `Unexpected token`。**edit 工具会剥掉 BOM**，每次改完要补：
+
+```powershell
+$p = "ui-agent/scripts/bootstrap.ps1"
+$t = [System.IO.File]::ReadAllText($p, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding $true))
+```
+
+`bootstrap.sh` 无此要求。
+
+`bootstrap` 的 `-CheckOnly` / `--check` 必须**不装任何东西**：早期版本在这一支里用 `uv run` 查 python 版本，
+结果顺手创建了 `.venv`。现在先 sync 再读 `.venv` 里的 python，`--check` 全程零写入。
 
 ## 待办（明确未做，不要误以为已支持）
 

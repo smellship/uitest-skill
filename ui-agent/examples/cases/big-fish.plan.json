@@ -1,0 +1,80 @@
+{
+  "case_id": "bing-search-paging",
+  "name": "必应搜索大肥鱼并翻到第二页",
+  "url": "",
+  "steps": [
+    {
+      "goal": "在必应搜索框输入「大肥鱼」并点击搜索按钮，等待搜索结果页加载完成",
+      "checks": [
+        {
+          "kind": "url_contains",
+          "value": "/search?q=",
+          "expected": "/search?q=",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "text_contains",
+          "value": "大肥鱼",
+          "expected": "大肥鱼",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    },
+    {
+      "goal": "向下滚动到页面底部的分页区域，点击一次「下一页」，进入搜索结果第二页。\n到达第二页后立刻报告 DONE，不要再继续点下一页。",
+      "checks": [
+        {
+          "kind": "url_contains",
+          "value": "first=",
+          "expected": "first=",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    },
+    {
+      "goal": "确认当前停留在搜索结果第二页（分页区显示页码），然后结束本次运行，不再翻页。",
+      "checks": [
+        {
+          "kind": "url_contains",
+          "value": "first=",
+          "expected": "first=",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "element_exists",
+          "value": "下一页",
+          "expected": "下一页",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "text_contains",
+          "value": "大肥鱼",
+          "expected": "大肥鱼",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    }
+  ],
+  "vars": {
+    "输入搜索词": "大肥鱼"
+  },
+  "notes": ""
+}

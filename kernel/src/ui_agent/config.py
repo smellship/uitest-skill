@@ -9,7 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BROWSERS_DIR = PROJECT_ROOT / ".browsers"
-ARTIFACTS_DIR = PROJECT_ROOT / ".artifacts"
+# 运行产物（runs/、cache/、chrome-profile/）。默认落在工作区内；
+# 宿主把整个 skill 包放进只读或共享的 skills 目录时，用 UI_AGENT_ARTIFACTS_DIR 指到用户可写的位置。
+ARTIFACTS_DIR = Path(os.environ.get("UI_AGENT_ARTIFACTS_DIR") or (PROJECT_ROOT / ".artifacts"))
 
 # Playwright 在启动子进程时读这个变量；在导入任何 playwright 之前固定到工作区
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(BROWSERS_DIR))

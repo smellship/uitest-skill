@@ -1,0 +1,47 @@
+{
+  "case_id": "local-fixture",
+  "name": "本地夹具 · 登录后查询票据",
+  "url": "",
+  "steps": [
+    {
+      "goal": "在「账号」和「密码」里填入给定值，然后点击「确 定」",
+      "checks": [
+        {
+          "kind": "element_exists",
+          "value": "查询",
+          "expected": "查询",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    },
+    {
+      "goal": "点击「查询」，等结果表出现",
+      "checks": [
+        {
+          "kind": "text_contains",
+          "value": "查询完成",
+          "expected": "查询完成",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        },
+        {
+          "kind": "text_contains",
+          "value": "票据类型",
+          "expected": "票据类型",
+          "role": "",
+          "attr": "",
+          "timeout_ms": 0
+        }
+      ],
+      "url": "",
+      "note": ""
+    }
+  ],
+  "vars": {},
+  "notes": "离线样例：页面是 kernel/examples/local_fixture.html，零模型调用即可跑通。\n账号密码不写在用例里，运行时用 --var 注入（示例值仅用于夹具，不是真实凭据）。"
+}

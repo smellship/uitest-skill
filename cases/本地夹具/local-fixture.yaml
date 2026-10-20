@@ -1,0 +1,14 @@
+id: local-fixture
+title: 本地夹具 · 登录后查询票据
+notes: |
+  离线样例：页面是 kernel/examples/local_fixture.html，零模型调用即可跑通。
+  账号密码不写在用例里，运行时用 --var 注入（示例值仅用于夹具，不是真实凭据）。
+steps:
+  - goal: 在「账号」和「密码」里填入给定值，然后点击「确 定」
+    checks:
+      - element_exists: 查询
+  - goal: 点击「查询」，等结果表出现
+    checks:
+      - text_contains: 查询完成
+      # 表头是 <th>，不是可交互元素，快照里没有它：只能用 text_contains 验
+      - text_contains: 票据类型

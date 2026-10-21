@@ -1,9 +1,19 @@
 # ui_agent → Skill 抽取 · M-A 交接文档
 
-- 日期：2026-10-19
+- 日期：2026-10-19（M-A 交接时的快照；M-A / M-B 已全部落码，见下）
 - 交接对象：接手 **M-A（内核 Agent 桥 + 四个缝接线）** 落码的 agent
-- 设计源：[spec-agent-skill.md](D:/test_skills/ui_agent_skill_dev/kernel/spec-agent-skill.md)（v2，第 2/3/5/8 节必读）
-- 当前阶段：**隔离副本已建、基线已验、代码 0 改动、M-A 未落码**
+- 设计源：[spec-agent-skill.md](kernel/spec-agent-skill.md)（v2，第 2/3/5/8 节必读）
+- 原件阶段：隔离副本已建、基线已验、代码 0 改动、M-A 未落码
+
+> **本文是历史文档。** 它记录的是 M-A 开工前的计划与约束，其中的「当前阶段」「待办」「未落码」
+> 描述都已过时，不要按它判断今天能做什么。今天的事实以这三处为准：
+>
+> - `README.md`（仓库总览 + 两种跑法 + 当前状态）
+> - `ui-agent/SKILL.md`（给宿主 agent 的入口；11 篇 references 按需读）
+> - `kernel/AGENTS.md`（硬约束 + 已落码事实 + 明确的待办清单）
+>
+> 本文仍然有价值的部分：第 1 节的工作区边界、第 8 节的硬约束与安全边界、第 9 节的行号锚点思路。
+> 桥的超时默认值是 **180s**（本文第 8、10 节写的是 600s，那是当时的计划值）。
 - 一句话目标：在副本内核里加「文件桥」，让宿主对话大模型接替 planner / textfill / supervise / decide 四个 LLM 缝；Jev 决策保留；平台现有 HTTP 双轨与内核全部功能原样不动。
 
 ---

@@ -40,7 +40,7 @@ def load_goal(args) -> str:
     if args.goal:
         text = args.goal
     else:
-        text = Path(args.goal_file).read_text(encoding="utf-8")
+        text = Path(args.goal_file).read_text(encoding="utf-8-sig")
     text = text.strip()
     if not text:
         raise RuntimeError("目标为空")
@@ -134,17 +134,38 @@ def cmd_snapshot(args) -> int:
 
 def cmd_case_compile(args) -> int:
     try:
-        text = Path(args.in_file).read_text(encoding="utf-8")
+        text = Path(args.in_file).read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise RuntimeError(f"读不到用例文件 {args.in_file}：{exc}") from exc
     secret_keys = None if args.secret_keys is None else [
         item.strip() for item in args.secret_keys.split(",") if item.strip()]
     result = compile_case(text, secret_keys)
+    written = _write_plan_file(args.out, result) if result["ok"] else None
     if args.json:
-        _print_json(result)
+        payload = dict(result)
+        if written is not None:
+            payload["out"] = str(written)
+        _print_json(payload)
     else:
         _print_lint(result)
+        if written is not None:
+            print(f"计划已写入 {written}（可直接给 run --plan-file）")
+        elif args.out and not result["ok"]:
+            print(f"未写入 {args.out}：校验没通过")
     return 0 if result["ok"] else 1
+
+
+def _write_plan_file(out: str | None, result: dict) -> Path | None:
+    """把编译出的 plan 单独落一个文件：run --plan-file 只吃 plan 本体，不吃 --json 的外壳。"""
+    if not out:
+        return None
+    path = Path(out)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(result["plan"], ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"计划写不进 {path}：{exc}") from exc
+    return path
 
 
 def cmd_case_draft(args) -> int:
@@ -185,7 +206,7 @@ def _print_json(data: dict) -> None:
 
 def cmd_plan(args) -> int:
     settings = apply_overrides(Settings(), args)
-    text = Path(args.desc_file).read_text(encoding="utf-8") if args.desc_file else args.desc
+    text = Path(args.desc_file).read_text(encoding="utf-8-sig") if args.desc_file else args.desc
     if not (text or "").strip():
         raise RuntimeError("流程描述为空")
     plan, meta = make_plan(settings, text, args.url or "")
@@ -247,7 +268,7 @@ def _run_goal(args, settings: Settings) -> int:
 
 
 def _run_plan(args, settings: Settings) -> int:
-    plan = plan_from_json(Path(args.plan_file).read_text(encoding="utf-8"))
+    plan = plan_from_json(_read_plan_text(args.plan_file))
     if args.url:
         plan.url = args.url
     if not plan.url:
@@ -277,6 +298,15 @@ def _run_plan(args, settings: Settings) -> int:
         print(f"  {step.index:02d}. {mark} {step.label} — {step.detail}")
     _tail(result.run_dir, result.report, result.defect_candidates, result.zoom_note)
     return 0 if result.success else 1
+
+
+def _read_plan_text(path: str) -> str:
+    """读计划文件。用 utf-8-sig 容忍 BOM：Windows 的 Set-Content -Encoding UTF8 / 记事本都会写 BOM，
+    而 json.loads 见到 BOM 会直接抛「Unexpected UTF-8 BOM」。"""
+    try:
+        return Path(path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        raise RuntimeError(f"读不到计划文件 {path}：{exc}") from exc
 
 
 def _run_dir(args) -> Path | None:
@@ -455,6 +485,9 @@ def main(argv: list[str] | None = None) -> int:
                                                       "给了就校验 vars 里的 ${{secret.X}} 引用是否登记过")
     compile_parser.add_argument("--json", action="store_true",
                                 help="stdout 只输出一份 JSON（errors/warnings/plan）")
+    compile_parser.add_argument("--out", metavar="计划.json",
+                                help="把编译出的 plan 单独写一份文件，可直接给 run --plan-file"
+                                     "（--json 的外壳不能直接当计划用）")
     compile_parser.set_defaults(func=cmd_case_compile)
     draft_parser = case_sub.add_parser("draft", help="自然语言流程 → 用例 YAML 草稿（会调用文本模型）")
     draft_parser.add_argument("--desc", required=True, help="流程描述（整段文本）")

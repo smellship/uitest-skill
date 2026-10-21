@@ -136,7 +136,7 @@ MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
 ```
 ① 环境自检      uv run ui-agent --help 能出子命令；.browsers 里有 chromium
 ② 定用例        在用户给的用例库里写 <场景>/<用例>.yaml  →  case compile 到 0 error
-                →  取 plan 落 <场景>/others/<用例>.plan.json
+                →  --out 把 plan 落 <场景>/others/<用例>.plan.json
 ③ 定档          按上一节选四档之一；说清这次会不会花 token
 ④ 跑            后台起 run（--run-dir 指到 <场景>/outputs/<时间戳>） → 循环 bridge wait
                 → 处置 ask → bridge answer → 等 finished
@@ -195,8 +195,8 @@ steps:
 跑之前先把 `账号` / `密码` 留在命令行（**YAML 里不写凭据**）：
 
 ```bash
-# ① 编译到 0 error，顺手把 plan 落到 others/
-uv run ui-agent case compile --in "$CASE" --json > /tmp/plan.json
+# ① 编译到 0 error，同时把 plan 落到 others/（--out 写的是 plan 本体，能直接喂 --plan-file）
+uv run ui-agent case compile --in "$CASE" --out "$CASE_DIR/others/login-query.plan.json" --json
 # ② 首次录制（会问你 ask，见 references/running.md；宿主循环可直接用 scripts/host_loop.py）
 uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
   --url "$URL" --decider agent --supervisor off --relearn \
@@ -208,6 +208,11 @@ uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
   --var 账号=demo --var 密码=demo \
   --run-dir "$OUT" --json
 ```
+
+**别用 `case compile --json > plan.json`**：`--json` 打的是外壳
+`{"ok":…,"errors":…,"warnings":…,"plan":{…}}`，`run --plan-file` 只吃里面的 `plan` 本体。
+`--out` 就是为这一步准备的，它写出来的文件与 `plan` 字段逐字节相同。
+（PowerShell 的 `>` / `Set-Content -Encoding UTF8` 还会加 BOM；内核现在读侧能容忍 BOM，但没必要绕这一圈。）
 
 想先拿包内的离线夹具把这条流程走通，把 `$URL` 设成上面的 `$FIXTURE` 即可——夹具正好是
 「账号 + 密码 + 确定 + 查询」的形状，两条命令都能跑过。

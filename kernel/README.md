@@ -116,7 +116,7 @@ uv run ui-agent explore --goal "清空全部模拟行并核对结果" --url <网
 #   → <run-dir>\explore\ 下有 trajectory.md（逐步轨迹）、explored.yaml（用例骨架）、explore.json
 
 # 2) 读轨迹，自己把 explored.yaml 的 checks: [] 补上（**不补就 compile 不过，这是故意的**）
-uv run ui-agent case compile --in cases\my-case.yaml --json
+uv run ui-agent case compile --in cases\my-case.yaml --out plan.json --json
 
 # 3) 跑这份 YAML：这一次既录制，又证明断言真的成立
 uv run ui-agent run --plan-file plan.json --url <网址> `
@@ -394,7 +394,8 @@ stdout 只留最后一份 JSON（人类话术走 stderr），退出码 **0=成�
 # 用例 YAML → 计划：校验 + 编译（--secret-keys 给出环境已登记的密钥名，用于查未知引用）
 uv run ui-agent case compile --in cases\baiwang.yaml --json --secret-keys 账号,密码
 #   → {ok, errors[{line,code,message}], warnings[…], plan}；errors 非空时 plan 为 null
-#   → 编译出的 plan 可直接落盘当 run --plan-file 的输入
+#   → 要落盘给 run --plan-file，用 --out（写的是 plan 本体；--json 的外壳不能直接当计划）
+uv run ui-agent case compile --in cases\baiwang.yaml --out plan.json --secret-keys 账号,密码
 
 # 一句话 → 用例草稿（这一步调用文本模型）
 uv run ui-agent case draft --desc "登录后查询票据" --url <网址> --json

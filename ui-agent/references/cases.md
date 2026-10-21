@@ -97,9 +97,12 @@ vars:
 
 ```bash
 uv run ui-agent case compile --in <你的用例>.yaml --json
+# 想顺手把计划落成能直接跑的文件，加 --out
+uv run ui-agent case compile --in <你的用例>.yaml --out <计划>.json --json
 ```
 
-`--json` 输出 `{ok, errors[], warnings[], plan}`。`errors` 非空时 `plan` 为 null、退出码 **1**。
+`--json` 输出 `{ok, errors[], warnings[], plan}`（给了 `--out` 且编译通过时多一个 `out`）。
+`errors` 非空时 `plan` 为 null、退出码 **1**、`--out` 不写文件。
 
 ### 错误码
 
@@ -131,7 +134,17 @@ uv run ui-agent case compile --in <你的用例>.yaml --json
 
 ## 从 YAML 到跑：plan.json
 
-`case compile --json` 的 `plan` 是完整计划对象，落成 `<用例>.plan.json` 即可给 `run --plan-file` 吃。
+落 plan 只有一种正确姿势——`--out`：
+
+```bash
+uv run ui-agent case compile --in "$CASE" --out "$CASE_DIR/others/<用例>.plan.json" --json
+```
+
+它写出的文件就是 `run --plan-file` 要的计划本体。**不要用 `--json > 文件`**：
+`--json` 打的是外壳 `{"ok":…,"errors":…,"warnings":…,"plan":{…}}`，直接喂 `--plan-file` 会被
+`TestPlan` 拒（缺 `steps`）；PowerShell 的 `>` / `Set-Content -Encoding UTF8` 还会额外加 BOM。
+`--out` 只在编译通过时才写文件（有 error 就什么都不落，免得留下半成品）。
+
 YAML 里刻意不写入口地址（同一份用例要跑在不同环境），所以 `plan.url` 一般是空的，
 **入口由 `--url` 给**；`plan.url` 只在你想把地址钉死在计划里时才填（`--url` 仍可临时覆盖）：
 
@@ -161,10 +174,9 @@ steps:
 ## 首次录制与之后回放
 
 ```bash
-# 先编译，把 plan 落到同场景的 others/ 下
-uv run ui-agent case compile --in "$CASE" --json > /tmp/compiled.json
-# 取出 .plan 字段写进 "$CASE_DIR/others/<用例>.plan.json"（url 留空）
+# 先编译，把 plan 落到同场景的 others/ 下（--out 直接写 plan 本体）
 PLAN="$CASE_DIR/others/login-query.plan.json"
+uv run ui-agent case compile --in "$CASE" --out "$PLAN" --json
 
 # 首次录制（--decider agent 会停下来问你；也可用 scripts/host_loop.py 代答）
 uv run ui-agent run --plan-file "$PLAN" \

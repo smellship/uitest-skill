@@ -1,0 +1,14 @@
+# 本仓库只放 skill 与内核；用例是用户自己的资产，不进这个仓库。
+# 本地若把用例库挂在工作区里（cases/ 等），不会被误提交。
+cases/
+cases - 副本/
+.venv/
+.browsers/
+.artifacts/
+runs/
+.out/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.env

@@ -10,6 +10,7 @@ import pytest
 
 from ui_agent import cli
 from ui_agent.cli import main, parse_vars
+from ui_agent.llm.planner import plan_from_json
 from ui_agent.schema.check import CheckSpec
 from ui_agent.schema.plan import PlanStep
 from ui_agent.schema.plan import TestPlan as Plan
@@ -302,6 +303,49 @@ def test_case_compile_command_json_and_exit_codes(tmp_path, capsys):
     assert payload["ok"] is False and payload["errors"][0]["code"] == "steps_empty"
 
     assert main(["case", "compile", "--in", str(tmp_path / "没有这个文件.yaml"), "--json"]) == 2
+
+
+def test_case_compile_writes_plan_file_for_run_plan_file(tmp_path, capsys):
+    """--out 落的是 plan 本体：run --plan-file 只吃这个形状，不吃 --json 的外壳。"""
+    good = tmp_path / "ok.yaml"
+    good.write_text(GOOD_CASE_YAML, encoding="utf-8")
+    out = tmp_path / "others" / "ok.plan.json"
+    assert main(["case", "compile", "--in", str(good), "--out", str(out), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["out"] == str(out)
+    written = json.loads(out.read_text(encoding="utf-8"))
+    # 与 --json 里的 plan 完全一致，且能被 run 直接解析成计划
+    assert written == payload["plan"]
+    plan = plan_from_json(out.read_text(encoding="utf-8"))
+    assert [step.goal for step in plan.steps] == ["登录"]
+
+
+def test_case_compile_does_not_write_plan_when_check_failed(tmp_path, capsys):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("steps: []\n", encoding="utf-8")
+    out = tmp_path / "bad.plan.json"
+    assert main(["case", "compile", "--in", str(bad), "--out", str(out), "--json"]) == 1
+    json.loads(capsys.readouterr().out)
+    assert not out.exists()
+
+
+def test_case_compile_accepts_utf8_bom(tmp_path, capsys):
+    """Windows 的 Set-Content -Encoding UTF8 / 记事本会写 BOM；读侧要吃掉它。"""
+    bom = tmp_path / "bom.yaml"
+    bom.write_bytes(b"\xef\xbb\xbf" + GOOD_CASE_YAML.encode("utf-8"))
+    assert main(["case", "compile", "--in", str(bom), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True and len(payload["plan"]["steps"]) == 1
+
+
+def test_run_plan_file_accepts_utf8_bom(tmp_path, capsys):
+    """同一份带 BOM 的 plan：以前抛「Unexpected UTF-8 BOM」，现在照读。"""
+    plan = Plan(name="演示", url="http://example.test/", steps=[
+        PlanStep(goal="登录", checks=[CheckSpec(kind="text_contains", expected="已登录")])])
+    path = tmp_path / "plan.json"
+    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(plan.model_dump(), ensure_ascii=False).encode("utf-8"))
+    assert cli._read_plan_text(str(path)).lstrip().startswith("{")
+    assert [step.goal for step in plan_from_json(cli._read_plan_text(str(path))).steps] == ["登录"]
 
 
 def test_case_compile_rejects_unregistered_secret_reference(tmp_path, capsys):

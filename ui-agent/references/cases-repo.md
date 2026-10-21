@@ -29,7 +29,7 @@ cd <本地路径> && git status          # 确认拿到的是干净工作树
   <场景>/
     <用例>.yaml                 # 唯一真源
     others/
-      <用例>.plan.json          # case compile 产物
+      <用例>.plan.json          # case compile --out 产物
       *.txt                     # 探索用 goal / 素材
     outputs/                    # 该场景所有运行产物，默认不进库
       <用例>/

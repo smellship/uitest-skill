@@ -102,7 +102,7 @@ def _load_payload(args) -> dict:
     """读 --file / --data，校验是对象且含 answer 对象（可带 answered_by / note）。"""
     if args.file:
         try:
-            raw = Path(args.file).read_text(encoding="utf-8")
+            raw = Path(args.file).read_text(encoding="utf-8-sig")
         except OSError as exc:
             raise RuntimeError(f"读不到答复文件 {args.file}：{exc}") from exc
     else:

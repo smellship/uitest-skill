@@ -40,11 +40,16 @@
 - 密钥只放 `.env`（已 gitignore）；测试不得调用付费 API（含 TypeSafe 与文本模型）。
 - 平台契约（P0）：平台只按 **argv 调 CLI + 读文件/JSON**，永不 import 内核代码。
   带 `--json` 的子命令 stdout 只留最后一份 JSON（人类话术走 stderr），退出码 0=成功、1=用例失败（JSON 仍有效）、其他=内核错误。
-  `case compile` 出错时 `plan` 必须为 `null`；`run --run-dir` 的产物布局（根 `trace.jsonl` 是分层时间线：
+  `case compile` 出错时 `plan` 必须为 `null`；`--out` 只在编译通过时写文件，写的是 `plan` 本体
+  （`--json` 外壳 `{ok,errors,warnings,plan}` 不能直接喂 `run --plan-file`，这是给宿主踩过的坑）；
+  `run --run-dir` 的产物布局（根 `trace.jsonl` 是分层时间线：
   `run_start`/`run_end`/`step_start`/`step_end` 生命周期行 + `decision`（每行有 `step/url/title`）+ `assert` + `model` 行，
   并带 `seq` 与毫秒级 `at`；根 `actions.json`、`snapshots/`、`screenshots/`、`summary.json`/`plan.json`）是对外接口，改名即破坏平台。
   产物策略由 `UI_AGENT_MODE` 定，有无头由 `UI_AGENT_HEADLESS` 定（服务器 `--mode debug` 也要无头）。
 - 中文 Windows 下一律 UTF-8 读写（`encoding="utf-8"`），否则 GBK 解码会崩。
+  **读用户给的文件用 `utf-8-sig`**（`--goal-file` / `--plan-file` / `--desc-file` / `--in` / `bridge answer --file`）：
+  PowerShell 的 `>`、`Set-Content -Encoding UTF8`、记事本都会写 BOM，`json.loads` 见 BOM 直接抛
+  `Unexpected UTF-8 BOM (decode using utf-8-sig)`。写出侧仍用 `utf-8`（不带 BOM）。
 - 未经用户要求不 commit / push。
 
 ## Agent 桥 / skill（M-A，2026-10-19）

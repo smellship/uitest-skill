@@ -243,6 +243,42 @@ def check_outputs(rep: Report) -> None:
             rep.ok(f"{doc} 提了 --run-dir")
 
 
+def check_plan_file(rep: Report) -> None:
+    """落 plan 只能靠 --out。
+
+    曾经踩过两次：① `case compile --json > plan.json` 写的是外壳，run --plan-file 解析不出来；
+    ② PowerShell 的 `>/Set-Content -Encoding UTF8` 加 BOM，json.loads 直接抛错。
+    内核已经两项都兜住了（--out 写本体、读侧用 utf-8-sig），但文档不该再教弯路。
+    """
+    print("plan 落盘：是否只用 --out，而不是重定向 --json")
+    for doc in (SKILL_ROOT / "SKILL.md", REFS / "cases.md", REFS / "cases-repo.md"):
+        text = read(doc)
+        if "case compile" not in text:
+            continue
+        if "--out" not in text:
+            rep.fail(f"{doc.name} 讲 case compile 却没提 --out（读者会把 --json 外壳当计划）")
+        else:
+            rep.ok(f"{doc.name} 用 --out 落 plan")
+
+    # 反例（「别用 `case compile --json > 文件`」）是允许的：这类行带劝阻词
+    bad = re.compile(r"case compile[^\n]*--json\s*>")
+    corpus = [SKILL_ROOT / "SKILL.md", *sorted(REFS.glob("*.md"))]
+    hits = []
+    for path in corpus:
+        for line in read(path).splitlines():
+            if bad.search(line) and not any(word in line for word in ("别用", "不要", "错", "别")):
+                hits.append(f"{path.name}: {line.strip()[:60]}")
+    if hits:
+        rep.fail(f"这些文档还在教 `case compile --json > 文件`：{'；'.join(hits)}")
+    else:
+        rep.ok("没有文档教 `--json > 文件`")
+
+    if "_write_plan_file" not in read(SRC / "cli.py"):
+        rep.fail("cli.py 里找不到 _write_plan_file；--out 的落盘口径可能变了")
+    else:
+        rep.ok("cli.py 仍有 --out 落盘实现")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_docs", description="校验 skill 文档与内核源码一致")
     ap.add_argument("-v", "--verbose", action="store_true", help="列出每一条通过项")
@@ -258,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     check_links(rep)
     check_paths(rep)
     check_outputs(rep)
+    check_plan_file(rep)
 
     print()
     if rep.bad:

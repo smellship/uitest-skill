@@ -137,7 +137,7 @@
 
 | 现象 | 旋钮 | 说明 |
 |---|---|---|
-| 页面重，token 爆 | `MAX_ELEMENTS=60` `MAX_TEXT=2000` | 环境变量；默认 250 / 6000。必应首页 214 元素会让单次 input 到 5 万 token |
+| 页面重，token 爆 | `MAX_ELEMENTS=60` `MAX_TEXT=2000` | 环境变量；默认 250 / 6000。元素多的大首页会把单次 input 抬到几万 token |
 | 点击后页面来不及反应 | `--settle-ms 1500` | 默认 700ms |
 | 断言等不到 | `--assert-timeout-ms 15000` | 默认 5000ms |
 

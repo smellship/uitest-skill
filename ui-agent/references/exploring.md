@@ -14,19 +14,22 @@
 
 ```bash
 # Jev 探索（有 key，快，花 Jev token）
-uv run ui-agent explore --url https://cn.bing.com/ \
-  --goal "搜索大肥鱼，翻到第二页结果就停" \
+uv run ui-agent explore --url https://example.com/ \
+  --goal "走到结果列表的第二页就停" \
   --decider jev --supervisor off \
-  --var 输入搜索词=大肥鱼 \
-  --run-dir .artifacts/runs/exp-1 --json
+  --run-dir "$OUT" --json
 
 # 你自己探索（没 key；--decider agent 是 explore 的默认值）
-uv run ui-agent explore --url https://cn.bing.com/ \
-  --goal "搜索大肥鱼，翻到第二页结果就停" \
+uv run ui-agent explore --url https://example.com/ \
+  --goal "走到结果列表的第二页就停" \
   --decider agent --supervisor agent \
-  --run-dir .artifacts/runs/exp-2 --json &
+  --run-dir "$OUT" --json &
 # 之后照 running.md 的循环 wait / answer
 ```
+
+`$OUT` 是这次探索的输出目录。在用例库里它必须落在该场景的 `outputs/` 下
+（`<用例库>/<场景>/outputs/<名字>-<时间戳>`），否则产物会散在 `kernel/.artifacts/`、
+跟着 skill 包走、进不了用例库的版本控制。见 [cases-repo.md](cases-repo.md)。
 
 `--decider agent` 时 `--run-dir` 必填（宿主得在浏览器起来前知道桥在哪）。
 `--supervisor` 在 explore 里可以 `on` / `off` / `agent`：卡住时要不要人救。
@@ -48,10 +51,10 @@ uv run ui-agent explore --url https://cn.bing.com/ \
 `trajectory.md` 长这样：
 
 ```markdown
-## https://cn.bing.com/「必应搜索」
- 01. TYPE_TEXT「输入搜索词」← 值来自 --var（不落盘、不进模型）
- 02. CLICK「百度一下」 → 页面有变化
-## https://cn.bing.com/search?q=...
+## https://example.com/「示例站点」
+ 01. TYPE_TEXT「搜索」← 值来自 --var（不落盘、不进模型）
+ 02. CLICK「搜索」 → 页面有变化
+## https://example.com/search?q=...
  03. SCROLL_DOWN （level 1）
  04. CLICK「下一页」 → 页面有变化
 ```
@@ -103,16 +106,15 @@ steps:
 | 症状 | 原因 | 修法 |
 |---|---|---|
 | `repeat_no_progress`：同一操作连 3 次 | goal 里的值填不进控件 | 检查 `--var` 键名是否是控件标签的**子串** |
-| `max_tokens_exceeded` | 页面元素太多 | `MAX_ELEMENTS=60`、`MAX_TEXT=2000`（见 [setup.md](setup.md)） |
-| `blocked`：跳验证码/风控 | 站点反爬 | 换站点；本机 IP 对百度全站返回滑块验证，必应可用 |
+| `max_tokens_exceeded` | 页面元素太多 | `MAX_ELEMENTS=60`、`MAX_TEXT=2000`（见 [envs.md](envs.md)） |
+| `blocked`：跳验证码 / 风控 | 站点反爬 | 换站点、换网络出口，或用已登录的 profile |
 | `low_confidence`：连续 3 次置信度 < 0.55 | 页面没有可推进的控件，模型在瞎猜 | 加 `--supervisor agent` 让人救，或改 goal |
 | 走了很多步但没到目标 | goal 太笼统 | goal 里写清判据（「停在第二页」而不是「翻页」） |
 
-实测数字：必应首页 214 元素 / 29K 字符，一次探索吃掉 60 万 input token
-（12 次调用 × 均 5 万/次）。同样的动作在百度首页（34 元素 / 3.6K 字符）只要零头。
-**页面越大，每次决策重发的 state 越贵** —— 探索前先把 `MAX_ELEMENTS` 收小。
+**页面越大，每次决策重发的 state 越贵**（每次调用都重发整份快照，不增量）。
+探索前先把 `MAX_ELEMENTS` / `MAX_TEXT` 收小，见 [envs.md](envs.md)。
 
 ## 探索之后要不要留 `explore/`
 
 留。它是「这次为什么这么写用例」的唯一记录，也是下次页面改版时对照的基线。
-`.artifacts/` 本来不进版本库。
+`outputs/` 默认进 `.gitignore`（见 [cases-repo.md](cases-repo.md)），要留档就 `git add -f`。

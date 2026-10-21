@@ -190,14 +190,17 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 ## skill 包：自足的一整份交付（M-B）
 
 `../ui-agent/`（**与 `kernel/` 平级**）是给宿主 agent 用的发布形态。它**自足**：
-文档 + 内核副本 + 样例用例在一个目录里，整个丢进宿主的 skills 目录就能跑，
+文档 + 内核副本在一个目录里，整个丢进宿主的 skills 目录就能跑，
 宿主不需要再去找开发树。宿主读 `SKILL.md` 决定读哪篇 reference。
+
+**包里不带用例**：用例是用户自己的资产，放他们自己的 git 仓库（`<场景>/<用例>.yaml` +
+`<场景>/others/<用例>.plan.json` + `<场景>/outputs/<时间戳>/`）。包里只有离线夹具
+`kernel/examples/local_fixture.html`——那是一个可跑的测试页，不是用例。
 
 ```
 ui-agent/
-  SKILL.md       references/       scripts/bootstrap.{ps1,sh}
-  examples/cases/          能直接跑的样例用例
-  kernel/                  ← build_skill.py 生成的内核副本（src / pyproject / uv.lock / …
+  SKILL.md       references/（11 篇）      scripts/{bootstrap.{ps1,sh},host_loop.py,check_docs.py}
+  kernel/                  ← build_skill.py 生成的内核副本（src / examples / pyproject / uv.lock / …
                                不含 tests、.venv、.artifacts、.browsers）
 ```
 
@@ -222,19 +225,24 @@ uv run python scripts/build_skill.py            # 同步（先删 ui-agent/kerne
 uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1
 ```
 
-skill 内容（8 篇 reference + 双平台 bootstrap）：
+skill 内容（11 篇 reference + 双平台 bootstrap + 两个自检脚本）：
 
 | 文件 | 讲什么 |
 |---|---|
-| `SKILL.md` | 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 退出码 |
+| `SKILL.md` | 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 退出码 + 文件桥 vs MCP |
 | `references/setup.md` | bootstrap / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误 |
+| `references/cases-repo.md` | 用例库怎么建：给用户要哪三件事、目录约定、outputs 时间戳、录像归属 |
 | `references/cases.md` | 用例 YAML 写法、8 种断言、5 种算「业务结果证据」、编译错误码全集 |
 | `references/running.md` | 后台起 run + `bridge wait`/`answer` 循环 + ask 处置表 + 读产物 |
 | `references/supervising.md` | `kind=supervise` 作答契约：四裁决、可用恢复动作、预算、拒绝文案 |
 | `references/deciding.md` | `kind=decide` 作答契约：13 种 operation、probabilities 六条硬规则、目标 head |
 | `references/exploring.md` | explore 四段工作流、产物四件、骨架为什么故意过不了编译 |
+| `references/m3.md` | iframe / shadow DOM / 遮挡 / 新标签 / 原生对话框：能做什么、边界在哪 |
 | `references/debugging.md` | trace 词表、cache 词表、11 个停机状态、失配判定、开销旋钮 |
+| `references/envs.md` | 全部环境变量与 CLI 开关的对应关系、默认值、常用组合 |
 | `references/security.md` | secret 与非 secret 两条路、落盘边界、探索产物为什么只写来源 |
+| `scripts/host_loop.py` | 宿主循环参考实现（标准库、不 import 内核、按 st_mtime 判 ask） |
+| `scripts/check_docs.py` | 文档与内核一致性校验（词表 / 默认值 / 开关 / 断链 / 包内不许有用例） |
 
 **planner 缝没有桥**：桥只覆盖 supervise / decide / text 三个缝；planner 由 agent 手写 YAML 替代
 （HTTP 版 `plan` / `case draft` 仍保留给平台用）。

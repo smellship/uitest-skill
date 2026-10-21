@@ -4,10 +4,12 @@ skill 包布局（与 kernel/ 平级，整体拷进宿主的 skills 目录即可
 
     ui-agent/
       SKILL.md                 宿主 agent 的入口
-      references/              8 篇按需读的说明书
-      scripts/                 bootstrap.ps1 / bootstrap.sh
+      references/              11 篇按需读的说明书
+      scripts/                 bootstrap.ps1 / bootstrap.sh / host_loop.py / check_docs.py
       kernel/                  ← 本脚本生成：内核最小可运行集
-      examples/cases/          ← 两个能直接跑的样例用例
+
+**不带用例**。用例库是用户自己的 git 仓库（见 references/cases-repo.md），
+skill 包只描述结构、放样例文本，不落任何 .yaml / .plan.json。
 
 为什么要有这一步：内核的开发树在 ``kernel/``，但它带 ``.venv`` / ``.artifacts`` /
 ``.browsers`` / ``runs`` / ``tests``，直接拷是几百 MB。这里只挑运行必需的文件，
@@ -40,21 +42,10 @@ TARGET = SKILL_ROOT / "kernel"
 COPY_DIRS = ("src", "examples")
 # 运行必需：单文件
 COPY_FILES = ("pyproject.toml", "uv.lock", "README.md", ".env.example", ".gitignore")
-# 自检用：setup.md 让用户跑这两条，所以得带上（约 2 KB）
+# skill 自己的脚本：setup.md 让用户跑 smoke_browser.py，SKILL.md 让用户跑 host_loop.py
 SCRIPT_FILES = ("env.ps1", "smoke_browser.py")
 # 可选：让宿主 agent 能自检（+1.7 MB）
 OPTIONAL_DIRS = ("tests",)
-# 样例用例：从仓库 cases/ 里挑这几份，目标目录自足。
-# offline 那份指向包内 examples/local_fixture.html，不联网也能跑，用来自检；
-# big-fish 那份是真实站点，需要网络。
-SAMPLE_CASES = (
-    ("本地夹具/local-fixture.yaml", "offline.yaml"),
-    ("本地夹具/others/local-fixture.plan.json", "offline.plan.json"),
-    ("大肥鱼/bing-search-paging.yaml", "big-fish.yaml"),
-    ("大肥鱼/others/bing-search-paging.plan.json", "big-fish.plan.json"),
-)
-SAMPLE_DIR = SKILL_ROOT / "examples" / "cases"
-CASES_ROOT = PROJECT_ROOT.parent / "cases"
 
 # 不该进 skill 包的东西（万一被误放进 COPY_DIRS）
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".ruff_cache")
@@ -97,11 +88,6 @@ def _plan(with_tests: bool) -> list[tuple[Path, Path]]:
         if not src.is_file():
             raise SystemExit(f"✗ 源文件不存在：{src}")
         pairs.append((src, TARGET / "scripts" / name))
-    for src_rel, dst_name in SAMPLE_CASES:
-        src = CASES_ROOT / src_rel
-        if not src.is_file():
-            continue  # 样例缺了不算错：别人的仓库未必带这两个用例
-        pairs.append((src, SAMPLE_DIR / dst_name))
     return pairs
 
 

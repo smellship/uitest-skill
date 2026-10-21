@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""校验 skill 文档与内核源码一致。
+
+文档最怕的不是写错，是**内核改了、文档没改**，而读者没法分辨。
+这个脚本只做一件事：从内核源码里把「词表」抽出来（断言种类、停机状态、缓存词表、
+操作清单、CLI 开关……），逐条确认它们确实出现在该出现的文档里。
+
+只用标准库（`ast` 读源码常量），不 import 内核，所以随便哪个 python 3.9+ 都能跑：
+
+    python scripts/check_docs.py
+    python scripts/check_docs.py -v      # 列出每一条通过项
+
+退出码 0 = 全过，1 = 有文档漏了或写了不存在的词。
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from pathlib import Path
+
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+KERNEL = SKILL_ROOT / "kernel"
+SRC = KERNEL / "src" / "ui_agent"
+REFS = SKILL_ROOT / "references"
+
+# 文档里绝不该出现的路径：它们只对开发树成立，装到别人机器上就是断链
+FORBIDDEN = (
+    "skills/ui-agent",
+    "cases/大肥鱼",
+    "cases/百望",
+    "examples/cases",
+)
+
+
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _const(rel: str, name: str):
+    """从源码里取一个模块级字面量（tuple / dict / str / int），不执行它。"""
+    tree = ast.parse(read(SRC / rel), filename=str(SRC / rel))
+    for node in tree.body:
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                return ast.literal_eval(node.value)
+    raise SystemExit(f"✗ 在 {rel} 里找不到常量 {name}；内核可能改名了，先看源码再改脚本")
+
+
+def _cli_flags() -> list[str]:
+    """把 cli.py / bridge_cli.py 里所有 add_argument 的 flag 抽出来。"""
+    flags: list[str] = []
+    for rel in ("cli.py", "bridge_cli.py"):
+        text = read(SRC / rel)
+        for match in re.finditer(r'add_argument\(\s*"([^"]+)"', text):
+            flag = match.group(1)
+            if flag.startswith("-") and flag not in flags:
+                flags.append(flag)
+    return flags
+
+
+class Report:
+    def __init__(self, verbose: bool) -> None:
+        self.verbose = verbose
+        self.bad: list[str] = []
+        self.good = 0
+
+    def ok(self, msg: str) -> None:
+        self.good += 1
+        if self.verbose:
+            print(f"  ✓ {msg}")
+
+    def fail(self, msg: str) -> None:
+        self.bad.append(msg)
+        print(f"  ✗ {msg}")
+
+    def words(self, label: str, words, doc: Path, *, minimum: int = 1) -> None:
+        """words 里的每一个都必须出现在 doc 里。"""
+        text = read(doc)
+        missing = [w for w in words if str(w) not in text]
+        if missing:
+            self.fail(f"{doc.name} 缺少 {label}：{'、'.join(map(str, missing))}")
+            return
+        if len(words) < minimum:
+            self.fail(f"{doc.name} 的 {label} 只有 {len(words)} 条，至少应有 {minimum} 条")
+            return
+        self.ok(f"{doc.name} 含全部 {len(words)} 个 {label}")
+
+
+def check_vocab(rep: Report) -> None:
+    print("词表：源码常量是否都写进了文档")
+
+    kinds = _const("schema/check.py", "KINDS")
+    rep.words("断言种类", kinds, REFS / "cases.md", minimum=8)
+
+    result_kinds = _const("case/yaml_case.py", "RESULT_KINDS")
+    rep.words("结果类断言", result_kinds, REFS / "cases.md", minimum=5)
+
+    labels = _const("schema/status.py", "STATUS_LABELS")
+    rep.words("停机状态", list(labels), REFS / "debugging.md", minimum=11)
+
+    for name in ("CACHE_MODES", "CACHE_WRITES", "CACHE_MISSES"):
+        values = _const("run/trace.py", name)
+        rep.words(name, values, REFS / "debugging.md")
+
+    for name in ("RULINGS", "RECOVER_OPS"):
+        values = _const("schema/supervisor.py", name)
+        rep.words(name, values, REFS / "supervising.md")
+
+    ops = _const("decide/jev.py", "OPERATION_LABELS")
+    rep.words("操作种类", list(ops), REFS / "deciding.md", minimum=13)
+
+    press = _const("decide/jev.py", "PRESS_KEYS")
+    rep.words("按键", list(press), REFS / "deciding.md")
+
+
+def check_facts(rep: Report) -> None:
+    print("事实：默认值与契约是否与源码一致")
+    timeout = _const("bridge/protocol.py", "DEFAULT_TIMEOUT_S")
+    if float(timeout) != 180.0:
+        rep.fail(f"桥超时默认值变成了 {timeout}；文档里写的是 180s，需同步改 protocol.py 或文档")
+    else:
+        rep.ok("桥超时默认 180s")
+    rep.words("桥超时", [int(timeout)], REFS / "running.md")
+    rep.words("桥超时", [int(timeout)], REFS / "envs.md")
+
+    policy = _const("replay/cache.py", "CACHE_POLICY_VERSION")
+    if policy != "v3":
+        rep.fail(f"CACHE_POLICY_VERSION 变成 {policy} 了；文档承诺保持 v3，需确认是否要升版本")
+    else:
+        rep.ok("缓存策略版本仍是 v3")
+
+    modes = _const("bridge/protocol.py", "KINDS")
+    rep.words("桥的 ask 种类", modes, REFS / "running.md", minimum=3)
+
+    states = _const("bridge/protocol.py", "STATES")
+    rep.words("桥终态", states, REFS / "running.md")
+
+    # 上传：分号分隔、accept 预检
+    rep.words("上传分隔符", [";"], REFS / "security.md")
+
+
+def check_cli(rep: Report) -> None:
+    print("命令面：cli.py 的开关是否都提到了")
+    flags = _cli_flags()
+    corpus = "\n".join(
+        read(p) for p in [SKILL_ROOT / "SKILL.md", *sorted(REFS.glob("*.md"))]
+    )
+    missing = [f for f in flags if f not in corpus]
+    if missing:
+        rep.fail(f"有 {len(missing)} 个 CLI 开关全文档未提及：{'、'.join(missing)}")
+    else:
+        rep.ok(f"{len(flags)} 个 CLI 开关都在文档里出现过")
+
+    for sub in ("run", "explore", "report"):
+        if sub not in read(SKILL_ROOT / "SKILL.md"):
+            rep.fail(f"SKILL.md 没提子命令 {sub}")
+        else:
+            rep.ok(f"SKILL.md 提到 {sub}")
+
+
+def check_links(rep: Report) -> None:
+    print("链接与结构")
+    skill = read(SKILL_ROOT / "SKILL.md")
+    linked = set(re.findall(r"\((references/[a-z0-9\-]+\.md)\)", skill))
+    on_disk = {f"references/{p.name}" for p in REFS.glob("*.md")}
+
+    for miss in sorted(linked - on_disk):
+        rep.fail(f"SKILL.md 链接了不存在的 {miss}")
+    if not linked - on_disk:
+        rep.ok("SKILL.md 的链接都指向真实文件")
+
+    for orphan in sorted(on_disk - linked):
+        rep.fail(f"{orphan} 没被 SKILL.md 路由表收录（读者找不到它）")
+    if not on_disk - linked:
+        rep.ok(f"{len(on_disk)} 篇 references 全部被路由")
+
+    # 每篇 references 内部的相对链接也要能落地
+    for path in sorted(REFS.glob("*.md")):
+        for target in re.findall(r"\((?!http)([a-zA-Z0-9\-]+\.md)\)", read(path)):
+            if not (REFS / target).is_file():
+                rep.fail(f"{path.name} 链接了不存在的 {target}")
+    rep.ok("references 之间的相对链接都有效")
+
+    if not skill.startswith("---\nname: ui-agent"):
+        rep.fail("SKILL.md 缺 frontmatter（name: ui-agent）")
+    else:
+        rep.ok("frontmatter 齐全")
+
+
+def check_paths(rep: Report) -> None:
+    print("路径：不许出现只对开发树成立的写法")
+    targets = [
+        SKILL_ROOT / "SKILL.md",
+        *sorted(REFS.glob("*.md")),
+        *sorted((SKILL_ROOT / "scripts").glob("bootstrap.*")),
+    ]
+    hits: list[str] = []
+    for path in targets:
+        text = read(path)
+        for bad in FORBIDDEN:
+            if bad in text:
+                hits.append(f"{path.relative_to(SKILL_ROOT)} 含 {bad}")
+    if hits:
+        for line in hits:
+            rep.fail(line)
+    else:
+        rep.ok(f"{len(targets)} 个文件都不含开发树专用路径")
+
+    # 用例不能进了包：skill 只描述结构
+    strays = [
+        p.relative_to(SKILL_ROOT)
+        for p in SKILL_ROOT.rglob("*")
+        if p.is_file()
+        and p.suffix in {".yaml", ".yml"}
+        and "kernel" not in p.relative_to(SKILL_ROOT).parts
+    ]
+    if strays:
+        rep.fail(f"skill 包里出现了用例文件（用例应留在用户自己的库）：{'、'.join(map(str, strays))}")
+    else:
+        rep.ok("skill 包里没有 .yaml 用例")
+
+
+def check_outputs(rep: Report) -> None:
+    print("产物约定：outputs 口径是否写清")
+    repo = read(REFS / "cases-repo.md")
+    for token in ("outputs", "--run-dir"):
+        if token not in repo:
+            rep.fail(f"cases-repo.md 没讲 {token}")
+        else:
+            rep.ok(f"cases-repo.md 讲了 {token}")
+    for doc in ("running.md", "exploring.md", "cases.md"):
+        if "--run-dir" not in read(REFS / doc):
+            rep.fail(f"{doc} 起 run 却没提 --run-dir（产物会落到包内）")
+        else:
+            rep.ok(f"{doc} 提了 --run-dir")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="check_docs", description="校验 skill 文档与内核源码一致")
+    ap.add_argument("-v", "--verbose", action="store_true", help="列出每一条通过项")
+    args = ap.parse_args(argv)
+
+    if not (SRC / "cli.py").is_file():
+        raise SystemExit(f"✗ 找不到内核源码：{SRC}（skill 包应自带 kernel/）")
+
+    rep = Report(args.verbose)
+    check_vocab(rep)
+    check_facts(rep)
+    check_cli(rep)
+    check_links(rep)
+    check_paths(rep)
+    check_outputs(rep)
+
+    print()
+    if rep.bad:
+        print(f"✗ {len(rep.bad)} 处不一致（另有 {rep.good} 项通过）")
+        return 1
+    print(f"✓ 文档与内核一致（{rep.good} 项检查全过）")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -113,7 +113,35 @@ class TestTimeoutClamp:
     def test_timeout_is_clamped_to_the_max(self, handle=None):
         """宿主可能传超大值：适配器夹到上限，避免单次工具调用被宿主杀死。"""
         assert mcp.MAX_NEXT_TIMEOUT_S == 300.0
-        assert mcp.DEFAULT_NEXT_TIMEOUT_S == 60.0
+        assert mcp.DEFAULT_NEXT_TIMEOUT_S == 240.0
+
+    def test_next_defaults_to_the_bridge_wait_window(self, handle=None):
+        """默认值必须与 `bridge wait` 同口径：内核冷启动到首个 ask 要 60-90s。"""
+        assert mcp.DEFAULT_NEXT_TIMEOUT_S == 240.0
+
+
+class TestExtraArgs:
+    def test_extra_args_are_appended_verbatim(self, tmp_path):
+        argv = mcp._argv_for_start(mcp.Settings(), run_dir=tmp_path, goal="g", url="u",
+                                   extra_args=["--relearn", "--settle-ms", "1500"])
+        assert argv[-3:] == ["--relearn", "--settle-ms", "1500"]
+        assert argv[:3] == ["run", "--run-dir", str(tmp_path)]
+
+    def test_forbidden_switches_are_rejected(self, tmp_path):
+        """桥接线由 server 装配：透传 --decider 之类会让 run 登记与实际不符。"""
+        for bad in ("--decider", "--run-dir", "--plan-file", "--json", "--bridge-timeout"):
+            with pytest.raises(ValueError, match="不许包含"):
+                mcp._argv_for_start(mcp.Settings(), run_dir=tmp_path, goal="g", url="u",
+                                    extra_args=[bad, "x"])
+
+    def test_first_extra_arg_must_be_a_switch(self, tmp_path):
+        with pytest.raises(ValueError, match="必须以"):
+            mcp._argv_for_start(mcp.Settings(), run_dir=tmp_path, goal="g", url="u",
+                                extra_args=["relearn"])
+
+    def test_schema_advertises_extra_args(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "ui_agent_start")
+        assert "extra_args" in tool["inputSchema"]["properties"]
 
 
 class TestAbort:

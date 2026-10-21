@@ -119,24 +119,28 @@ skill 包默认不带——它们校验的是内核自己，不是你的用例�
 ```
 ui-agent/                本 skill 包（自足，整目录拷走即可用）
   SKILL.md
-  references/            8 篇文档
-  scripts/               bootstrap.ps1 / bootstrap.sh
-  examples/cases/        offline（离线夹具）+ big-fish（真实站点）两份样例
+  references/            11 篇文档
+  scripts/               bootstrap.ps1 / bootstrap.sh / host_loop.py / check_docs.py
   kernel/                内核本体（自己的一份，独立 .venv）
     src/ui_agent/        内核源码
-    examples/            本地夹具页面（local_fixture.html / m3_fixture.html）
+    examples/            本地夹具页面（local_fixture.html / m3_fixture.html）—— 测试页，不是用例
     scripts/             env.ps1 + smoke_browser.py
-    .artifacts/          运行产物（默认落这里）
+    .artifacts/          默认产物目录（用 --run-dir 时不会落这里）
       runs/<任务>-<时间戳>/  每次 run 的产物
       cache/             回放录像（跨运行持久）
       chrome-profile/    登录态（默认目录，串行复用）
     .browsers/           浏览器二进制（由 bootstrap 装）
 ```
 
-**用例放哪由你定**：内核只按 `--in` / `--plan-file` 的路径找文件，不限定用例必须在包内。
-`examples/cases/` 里那两份是能直接跑的样例，`offline.*` 那份指向包内夹具、不联网。
+**包里没有用例。** 用例放用户自己的 git 仓库，结构见 [cases-repo.md](cases-repo.md)：
+`<场景>/<用例>.yaml` + `<场景>/others/<用例>.plan.json` + `<场景>/outputs/<时间戳>/`。
+内核只按 `--in` / `--plan-file` 的路径找文件，不限定用例放哪。
 
-产物目录可用 `UI_AGENT_ARTIFACTS_DIR=<可写目录>` 整体挪走（skill 目录只读时必须设）。
+产物目录两层用法：
+
+- 想全体挪走（skill 目录只读时必需）：`UI_AGENT_ARTIFACTS_DIR=<可写目录>`。
+- 想按用例归档（推荐）：每次运行显式 `--run-dir <用例库>/<场景>/outputs/<时间戳>`，
+  这样产物跟用例在一起、能单独归档，也不受 skill 升级影响。
 
 ## 5. 有头 / 无头
 

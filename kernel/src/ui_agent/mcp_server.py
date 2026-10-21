@@ -43,8 +43,12 @@ from ui_agent.bridge.client import AgentBridge
 from ui_agent.bridge.protocol import read_json
 from ui_agent.config import Settings
 
-DEFAULT_NEXT_TIMEOUT_S = 60.0     # MCP 工具调用受宿主时限约束，单次别太久
+DEFAULT_NEXT_TIMEOUT_S = 240.0    # 与 `bridge wait` 同口径：内核冷启动到首个 ask 可能要 60-90s
 MAX_NEXT_TIMEOUT_S = 300.0
+
+# 这些开关决定桥本身怎么接线，不许从 extra_args 传（传了会绕开 server 的记账）
+FORBIDDEN_EXTRA = {"--run-dir", "--decider", "--supervisor", "--json",
+                   "--plan-file", "--goal", "--goal-file", "--bridge-timeout"}
 
 
 @dataclass
@@ -92,7 +96,8 @@ def _settings(**overrides) -> Settings:
 def _argv_for_start(settings: Settings, *, plan_file: str = "", goal: str = "",
                     url: str = "", run_dir: Path, decider: str = "agent",
                     supervisor: str = "agent", vars_: dict[str, str] | None = None,
-                    mode: str = "ci", bridge_timeout: float | None = None) -> list[str]:
+                    mode: str = "ci", bridge_timeout: float | None = None,
+                    extra_args: list[str] | None = None) -> list[str]:
     """组装内核 argv：与 CLI 完全一致，不发明新参数。"""
     argv = ["run", "--run-dir", str(run_dir), "--decider", decider,
             "--supervisor", supervisor, "--mode", mode, "--json"]
@@ -104,7 +109,25 @@ def _argv_for_start(settings: Settings, *, plan_file: str = "", goal: str = "",
         argv += ["--bridge-timeout", str(bridge_timeout)]
     for key, value in (vars_ or {}).items():
         argv += ["--var", f"{key}={value}"]
+    argv += _clean_extra(extra_args)
     return argv
+
+
+def _clean_extra(extra_args: list[str] | None) -> list[str]:
+    """原样追加，但拒绝会破坏桥接线的开关。
+
+    `run` 的其余开关（`--relearn`、`--cache`、`--mask-vars`、五个开销旋钮、
+    `--check`、`--task`、`--upload-mode`、`--dialog-policy` …）都允许透传。
+    """
+    extra = [str(item) for item in (extra_args or [])]
+    for index, item in enumerate(extra):
+        if item.startswith("-") and item.split("=", 1)[0] in FORBIDDEN_EXTRA:
+            raise ValueError(f"extra_args 不许包含 {item.split('=', 1)[0]}："
+                             f"该开关由 server 自己装配（会绕开 run 登记与桥接线）")
+        if not item.startswith("-") and index == 0:
+            raise ValueError(f"extra_args 必须以 `--` 开关开头，收到 {item!r}")
+    return extra
+
 
 
 def _kernel_command() -> list[str]:
@@ -123,7 +146,8 @@ def _child_env() -> dict:
 def start_run(*, plan_file: str = "", goal: str = "", url: str = "",
               run_dir: str = "", decider: str = "agent", supervisor: str = "agent",
               vars_: dict[str, str] | None = None, mode: str = "ci",
-              bridge_timeout: float | None = None) -> dict:
+              bridge_timeout: float | None = None,
+              extra_args: list[str] | None = None) -> dict:
     """起一次内核运行（后台），返回 run_id 与桥目录；不阻塞。"""
     settings = _settings()
     if not run_dir:
@@ -134,7 +158,8 @@ def start_run(*, plan_file: str = "", goal: str = "", url: str = "",
     target.mkdir(parents=True, exist_ok=True)
     argv = _argv_for_start(settings, plan_file=plan_file, goal=goal, url=url,
                            run_dir=target, decider=decider, supervisor=supervisor,
-                           vars_=vars_, mode=mode, bridge_timeout=bridge_timeout)
+                           vars_=vars_, mode=mode, bridge_timeout=bridge_timeout,
+                           extra_args=extra_args)
     out_path = target / "kernel.stdout"
     err_path = target / "kernel.stderr"
     proc = subprocess.Popen([*_kernel_command(), *argv],
@@ -211,7 +236,9 @@ def _require(run_id: str) -> RunHandle:
 
 TOOLS = [
     {"name": "ui_agent_start",
-     "description": "起一次 ui-agent 内核运行（后台，不阻塞）。给 plan_file 或 goal+url。",
+     "description": "起一次 ui-agent 内核运行（后台，不阻塞）。给 plan_file 或 goal+url。"
+                    "其余 run 开关（--relearn / --cache / --mask-vars / 开销旋钮 / --check …）"
+                    "用 extra_args 原样透传。",
      "inputSchema": {"type": "object", "properties": {
          "plan_file": {"type": "string", "description": "plan.json 路径（与 goal 二选一）"},
          "goal": {"type": "string", "description": "自然语言目标（与 plan_file 二选一）"},
@@ -221,12 +248,16 @@ TOOLS = [
          "supervisor": {"type": "string", "enum": ["on", "off", "agent"]},
          "vars": {"type": "object", "additionalProperties": {"type": "string"}},
          "mode": {"type": "string", "enum": ["debug", "ci"]},
-         "bridge_timeout": {"type": "number"}}}},
+         "bridge_timeout": {"type": "number"},
+         "extra_args": {"type": "array", "items": {"type": "string"},
+                        "description": "追加的 run 开关，如 [\"--relearn\",\"--settle-ms\",\"1500\"]。"
+                                       "不许含 --run-dir/--decider/--supervisor/--plan-file/--goal/"
+                                       "--goal-file/--bridge-timeout/--json"}}}},
     {"name": "ui_agent_next",
      "description": "等下一个事件：ask / heartbeat / finished。到点没事件返回 heartbeat，续等即可。",
      "inputSchema": {"type": "object", "required": ["run_id"], "properties": {
          "run_id": {"type": "string"},
-         "timeout_s": {"type": "number", "description": "单次等待秒数（默认 60，上限 300）"}}}},
+         "timeout_s": {"type": "number", "description": "单次等待秒数（默认 240，上限 300）"}}}},
     {"name": "ui_agent_answer",
      "description": "答复一条 ask（原子写入；晚到/重复返回 accepted=false, reason=stale）。",
      "inputSchema": {"type": "object", "required": ["run_id", "ask_id", "answer"],

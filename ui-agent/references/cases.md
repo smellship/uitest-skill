@@ -136,16 +136,24 @@ YAML 里刻意不写入口地址（同一份用例要跑在不同环境），所
 **入口由 `--url` 给**；`plan.url` 只在你想把地址钉死在计划里时才填（`--url` 仍可临时覆盖）：
 
 ```json
-{"case_id": "bing-search-paging", "name": "必应搜索并翻页",
- "url": "", "vars": {"输入搜索词": "大肥鱼"}, "steps": [...]}
+{"case_id": "search-paging", "name": "搜索并翻页",
+ "url": "", "vars": {"搜索词": "示例"}, "steps": [...]}
 ```
 
-本包 `examples/cases/` 下有两份现成样例（`url` 都留空，所以每条命令都带 `--url`）：
+包里不带任何用例——用例在你自己的用例库（见 [cases-repo.md](cases-repo.md)）。
+下面这段是唯一需要记的形状，存成 `<用例库>/<场景>/<用例>.yaml` 即可：
 
-| 样例 | 跑什么 | 要网络 | 花 token |
-|---|---|---|---|
-| `offline.yaml` / `offline.plan.json` | 登录 + 查询，页面是包内 `kernel/examples/local_fixture.html` | 不要 | 录制会，回放不会 |
-| `big-fish.yaml` / `big-fish.plan.json` | 必应搜索「大肥鱼」并翻到第二页 | 要 | 录制会，回放不会 |
+```yaml
+id: login-query                 # 缓存身份，定了别改
+title: 登录后查询
+steps:
+  - goal: 在「账号」和「密码」里填入给定值，然后点击「确 定」
+    checks:
+      - element_exists: 查询
+  - goal: 点击「查询」，等结果出现
+    checks:
+      - text_contains: 查询完成
+```
 
 `plan.url` 为空时必须给 `--url`，否则报「计划里没有 url，请用 --url 指定入口」。
 给了 `--url` 就覆盖 plan 里的地址（但换地址 = 换缓存键，旧录像不再命中）。
@@ -153,20 +161,29 @@ YAML 里刻意不写入口地址（同一份用例要跑在不同环境），所
 ## 首次录制与之后回放
 
 ```bash
-# 离线样例：先确认环境通了（--url 用包内夹具的绝对路径，按所用 shell 拼）
-FIXTURE="file:///$(cygpath -m "$(pwd)")/examples/local_fixture.html"   # Git Bash；PowerShell 见 SKILL.md
+# 先编译，把 plan 落到同场景的 others/ 下
+uv run ui-agent case compile --in "$CASE" --json > /tmp/compiled.json
+# 取出 .plan 字段写进 "$CASE_DIR/others/<用例>.plan.json"（url 留空）
+PLAN="$CASE_DIR/others/login-query.plan.json"
 
-uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
-  --url "$FIXTURE" \
+# 首次录制（--decider agent 会停下来问你；也可用 scripts/host_loop.py 代答）
+uv run ui-agent run --plan-file "$PLAN" \
+  --url "$URL" \
   --decider agent --supervisor off --relearn \
-  --var 账号=demo --var 密码=demo --run-dir .artifacts/runs/rec-offline --json
+  --var 账号=demo --var 密码=demo --run-dir "$OUT/rec" --json
 
 # 零 token 回放：同一个 plan、同一个 --url、同样那组 --var 键（值可以换）
-uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
-  --url "$FIXTURE" \
+uv run ui-agent run --plan-file "$PLAN" \
+  --url "$URL" \
   --decider off --supervisor off \
-  --var 账号=demo --var 密码=demo --run-dir .artifacts/runs/rep-offline --json
+  --var 账号=demo --var 密码=demo --run-dir "$OUT/rep" --json
 ```
+
+先用包内离线夹具把流程走通也行：`$URL` 设成 `$FIXTURE`（拼法见 [setup.md](setup.md)），
+夹具页面正好是「账号 + 密码 + 确定 + 查询」的形状。
+
+`$OUT` 必须是该场景的 `outputs/<时间戳>`（见 [cases-repo.md](cases-repo.md)）；
+不给 `--run-dir` 时产物落到 `kernel/.artifacts/runs/<名字>-<时间戳>`，跟着 skill 包走，进不了用例库。
 
 `file:///$PWD/...` 在 Git Bash 下会拼成 `file:////d/...`（四斜杠），Chromium 打不开。
 Git Bash 用 `cygpath -m "$(pwd)"`，Windows 盘符形式是 `file:///D:/...`（三斜杠 + 正斜杠）。
@@ -177,8 +194,10 @@ Git Bash 用 `cygpath -m "$(pwd)"`，Windows 盘符形式是 `file:///D:/...`（
 录像只在**断言全过**（`mode=self-finalized`）时才落盘。断言没过时录像保留（因为你可能只是改了断言），
 但要重录才能更新内容——加 `--relearn`。
 
-## 已确认不可行
+## 已知边界
 
-- **百度全站**：本机 IP 直连就返滑块验证（`wappass.baidu.com/static/captcha`），UI 操作与直连 URL 都被拦。
-  需要搜索/翻页类用例时改用必应。
-- **closed shadow root** 里的控件拿不到（只覆盖 open shadow root），遇到只能放弃，不许猜。
+- **closed shadow root** 里的控件拿不到（只覆盖 open shadow root），遇到只能放弃，不许猜 selector。
+- **网络请求 / 响应不可见**：内核不挂响应监听，接口返回 500 但页面没变化时，模型和断言都看不见。
+- 验证码 / 风控 / 需要人机交互的站点，靠 UI 动作过不去；换环境或用已登录 profile，别在用例里绕。
+
+其余 M3 能力（iframe / open shadow / 遮挡 / 新标签 / 原生对话框）见 [m3.md](m3.md)。

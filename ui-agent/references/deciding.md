@@ -100,7 +100,8 @@
 
 ## 效率：状态是重复的
 
-每次 ask 都重发整份 state。大页面（必应首页实测 214 元素 / 29K 字符）会让单次 input 涨到 5 万 token。
-上生产前把 `MAX_ELEMENTS` 收到 60、`MAX_TEXT` 收到 2000（环境变量，见 [setup.md](setup.md)）。
+每次 ask 都重发整份 state，不增量。元素多、正文长的页面会把单次 input 推得很高，
+而一次运行有几十次 ask，成本是乘法。
+上生产前把 `MAX_ELEMENTS` 收到 60、`MAX_TEXT` 收到 2000（环境变量，见 [envs.md](envs.md)）。
 
-一次成功的百望录制：10 次决策、74 秒、11 万 input token。同样流程走回放是 0 token。
+录制完走回放就是 0 token —— 这是把成本压下来的主要手段，不是靠省 ask 次数。

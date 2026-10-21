@@ -107,26 +107,33 @@
 ## skill 包（M-B，2026-10-20）
 
 发布的 skill 包在 **`../ui-agent/`**（与 `kernel/` 平级，**不在 kernel 内**），由
-`scripts/build_skill.py` 从开发树同步生成。**它自足**：文档 + 内核副本 + 样例用例在一起，
+`scripts/build_skill.py` 从开发树同步生成。**它自足**：文档 + 内核副本在一起，
 整个目录丢进宿主的 skills 目录就能跑。宿主 agent 读 `SKILL.md` 决定读哪篇 reference。
+
+**包里不带用例。** 用例是用户自己的资产（断言必须由懂业务的人定），放在用户自己的 git 仓库里；
+skill 只教怎么写、怎么跑、产物放哪。包里唯一相关的是一个离线夹具
+`kernel/examples/local_fixture.html`——测试页，不是用例。
 
 ```
 ui-agent/
-  SKILL.md                        frontmatter(name+description) + 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面
+  SKILL.md                        frontmatter(name+description) + 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 文件桥 vs MCP
   references/
     setup.md                      bootstrap 脚本 / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误
+    cases-repo.md                 用例库怎么建：向用户要哪三件事 / 目录约定 / outputs 时间戳 / 录像归属
     cases.md                      用例 YAML 写法、8 种断言、5 种算「业务结果证据」、编译错误码全集
     running.md                    后台起 run + bridge wait/answer 循环 + 处置表 + 读产物
     supervising.md                kind=supervise 的作答契约（RULINGS / RECOVER_OPS / 预算 / 拒绝文案）
     deciding.md                   kind=decide 的作答契约（operation 13 种 / probabilities 六条硬规则 / 目标 head）
     exploring.md                  explore 四段工作流 + 产物四件 + 骨架为什么故意过不了编译
+    m3.md                         iframe / shadow DOM / 遮挡 / 新标签 / 原生对话框的能做什么与边界
     debugging.md                  trace 词表 / cache 词表 / 11 个停机状态 / 失配判定 / 浏览器开销旋钮
+    envs.md                       全部环境变量 ↔ CLI 开关对照、默认值、常用组合
     security.md                   secret 与非 secret 两条路 / 落盘边界 / 探索产物为什么只写来源
   scripts/
     bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 kernel/.browsers + 验 --help
-  examples/cases/
-    big-fish.yaml + big-fish.plan.json   能直接跑的样例（从仓库 cases/ 挑的）
-  kernel/                         ← build_skill.py 生成：内核最小可运行集（src / pyproject / uv.lock /
+    host_loop.py                  宿主循环参考实现：起内核 → 读 ask → 作答 → 读终态（标准库，不 import 内核）
+    check_docs.py                 文档与内核一致性校验：词表 / 默认值 / 开关 / 断链 / 包内不许有用例
+  kernel/                         ← build_skill.py 生成：内核最小可运行集（src / examples / pyproject / uv.lock /
                                      scripts/env.ps1 / scripts/smoke_browser.py），不含 tests 与运行产物
 ```
 
@@ -150,7 +157,8 @@ uv run python scripts/build_skill.py --with-tests
    不要写成「四个缝都能走桥」。
 3. **不给 agent 编断言的余地**。`explored.yaml` 的 `checks: []` 是故意的，它必须过不了 `case compile`。
 4. **路径一律相对本包**。文档里不许出现 `skills/ui-agent/`、`cases/大肥鱼/` 这类只对开发树成立的路径；
-   样例统一指 `examples/cases/`，命令一律假设 cwd 在 `kernel/`。
+   示例用例只写「结构」（一段 YAML 片段 + 该存到哪），不指向包里任何文件；命令一律假设 cwd 在 `kernel/`。
+   `scripts/check_docs.py` 会把这几条当断言跑，别绕过它。
 
 `bootstrap.ps1` 必须存成 **UTF-8 with BOM**：Windows PowerShell 5.1 读无 BOM 的 UTF-8 会按 ANSI 解码，
 中文注释里的全角标点会把语法解析带偏，报 `Unexpected token`。**edit 工具会剥掉 BOM**，每次改完要补：

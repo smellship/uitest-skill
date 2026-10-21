@@ -19,18 +19,20 @@
 uv run ui-agent run --goal "查一张 2024 年的票据" \
   --url https://example.com/invoices \
   --decider agent --supervisor agent \
-  --run-dir .artifacts/runs/my-run-1 --json &
+  --run-dir "$OUT" --json &
 
 # 2) 循环取事件
-uv run ui-agent bridge wait --run-dir .artifacts/runs/my-run-1 --json
+uv run ui-agent bridge wait --run-dir "$OUT" --json
 
 # 3) 按事件作答
-uv run ui-agent bridge answer --run-dir .artifacts/runs/my-run-1 --id 3 \
+uv run ui-agent bridge answer --run-dir "$OUT" --id 3 \
   --data '{"answer": {"operation": {"choice": "CLICK", "probabilities": {"CLICK": 1.0, ...}, "confidence": 0.9}, "click_target": {...}}}'
 ```
 
-`--run-dir` 省略时内核自动生成 `.artifacts/runs/<goal 前缀>-<时间戳>`，**但你不知道路径就无法 wait**。
-所以 agent 模式一律显式给，并且用固定名字方便人看。
+`$OUT` 是这次运行的产物目录。**在用例库里它必须是 `<用例库>/<场景>/outputs/<时间戳>`**
+（见 [cases-repo.md](cases-repo.md)）：不给 `--run-dir` 时内核自己生成
+`.artifacts/runs/<goal 前缀>-<时间戳>`，那个路径跟着 skill 包走——你既没法 `bridge wait`，
+产物也进不了版本控制。
 
 **先起 run 再 wait，不需要 sleep。** `bridge wait` 发现桥目录还没出现时，会自己等最多
 `--wait-dir`（默认 20s）——内核起浏览器要几秒，这段就靠它吸收。所以照上面 1→2 顺序直接连着敲即可。
@@ -52,6 +54,40 @@ loop:
 ```
 
 只有两个终止条件：`event=finished`，或 `bridge wait` 退出码非 0（真的没桥）。
+
+### 不想自己写循环：直接用 `scripts/host_loop.py`
+
+包内自带一份**可运行的**宿主循环，只用标准库、不 import 内核，照抄改 policy 即可：
+
+```bash
+# 先看它怎么用
+python scripts/host_loop.py --help
+
+# 拿包内离线夹具跑一遍（默认 policy=fixture，只对 local_fixture.html 成立）
+python scripts/host_loop.py \
+  --run-dir "$OUT/rec" --relearn \
+  --plan-file "$CASE_DIR/others/login-query.plan.json" \
+  --url "$FIXTURE" \
+  --var 账号=demo --var 密码=demo
+
+# 零 token 回放：换 --decider off，宿主根本不用作答
+python scripts/host_loop.py \
+  --run-dir "$OUT/rep" --decider off --supervisor off \
+  --plan-file "$CASE_DIR/others/login-query.plan.json" \
+  --url "$FIXTURE" --var 账号=demo --var 密码=demo
+```
+
+它负责四件容易写错的事：起内核并把 stdout/stderr 落到 `<run-dir>/host_loop.stdout.log`（**不用管道，避免死锁**）、
+按 `st_mtime` 判断哪些 ask 还没答（同一个 `--run-dir` 复跑时不会被上一轮的 `ans-*` 骗）、
+把 `--plan-file` 解析成绝对路径（子进程 cwd 是 `kernel/`，相对路径会错）、
+以及读终态后按 `status` 决定退出码（`ok` → 0，`crashed` → 2，其余 → 1）。
+
+`--decider off` / `--decider jev` **不建桥目录**，它识别这种情况后改为直接等进程收尾、读 `result.json`，
+不会白等 20s 再报「桥目录还没出现」。
+
+`--policy fixture` 只认离线夹具。换成 `--policy <你的.py>` 指向自己写的策略模块，
+里面给 `answer(ask, ctx)`（或分开的 `decide` / `supervise` / `text` 三个函数）。
+**decide 的返回值要多包一层**：`{"answers": {...}}`，不是直接把 answers 交回去。
 
 ## `wait` 的四种返回
 
@@ -124,8 +160,10 @@ loop:
 ## 复跑省 token
 
 ```bash
-uv run ui-agent run --plan-file <你的>.plan.json \
-  --decider off --supervisor off --run-dir .artifacts/runs/rep-1 --json
+uv run ui-agent run --plan-file "$PLAN" \
+  --url "$URL" --decider off --supervisor off \
+  --var 账号=demo --var 密码=demo \
+  --run-dir "$OUT" --json
 ```
 
 `--decider off` 时每一步都靠录像；任何一处对不上就 `cache_missed` 停下（**不会偷偷问模型**）。
@@ -152,7 +190,7 @@ uv run ui-agent run --plan-file <你的>.plan.json \
 
 ```bash
 uv run ui-agent explore --url https://example.com --goal "找到 2024 年的票据并打开详情" \
-  --decider agent --run-dir .artifacts/runs/exp-1 --json &
+  --decider agent --run-dir "$OUT" --json &
 ```
 
 产物在 `<run-dir>/explore/`：`goal.txt`、`trajectory.md`（按页面分组走过的动作）、
@@ -160,6 +198,7 @@ uv run ui-agent explore --url https://example.com --goal "找到 2024 年的票�
 
 explore **不写录像也不写缓存**——探索路径里有大量无用页面，录下来会污染回放。
 正确顺序：explore 摸路 → 你照着 `trajectory.md` 写正经验收断言 → 录制那次才进缓存。
+`$OUT` 同样落在该场景的 `outputs/` 下（见 [cases-repo.md](cases-repo.md)）。
 
 ## 别做的事
 

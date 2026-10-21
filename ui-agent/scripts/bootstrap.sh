@@ -150,13 +150,15 @@ cat <<EOF
 ✓ 环境就绪
 
 下一步：
-  1. 编译你自己的用例（路径随意，用例不必放在 skill 目录里）：
+  1. 读 references/cases-repo.md，把用例库接上（本包不含任何用例）
+  2. 写第一份 <场景>/<用例>.yaml，然后编译：
      uv run --project "$ROOT" ui-agent case compile --in <用例>.yaml --json
-  2. 读 references/running.md 起第一次 run
+  3. 起 run 时显式给 --run-dir <场景>/outputs/<时间戳>，产物才跟着用例走
 
-样例：examples/cases/big-fish.yaml（已编译好的 plan 同名同目录）
+没装 Jev key 也能跑：--decider agent 由宿主作答（配 scripts/host_loop.py），
+或 --decider off 走已录好的回放。
 
-提示：产物默认写到 $ROOT/.artifacts。若 skill 目录只读或要换位置，
-      设 UI_AGENT_ARTIFACTS_DIR 指向一个可写目录。
+提示：不显式给 --run-dir 时产物默认写到 $ROOT/.artifacts。
+      skill 目录只读、或想整体换位置，设 UI_AGENT_ARTIFACTS_DIR 指向可写目录。
 EOF
 exit 0

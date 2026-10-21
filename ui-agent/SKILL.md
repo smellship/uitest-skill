@@ -1,33 +1,36 @@
 ---
 name: ui-agent
-description: 用自然语言驱动真实 Chromium 跑 Web UI 测试，并把跑通的那一次录成零 token 回放。内核自己不做决策——它把「每一步点什么」写成 ask-*.json 问宿主对话大模型，宿主答 ans-*.json，浏览器动作由 Playwright 执行、断言由 DOM 独立校验。本 skill 自带内核，装进 skill 目录即可用，无需另装。用于：给一个网址和一句目标就自动点完一个业务流程；把流程固化成 YAML 用例反复跑；界面大改后重录；CI 里零模型复跑；或临时探索一个不熟悉的页面看它能点什么。会消耗模型 token，除非跑的是已录好的回放。
+description: 用自然语言驱动真实 Chromium 跑 Web UI 测试，并把跑通的那一次录成零 token 回放。内核自己不做决策——它把「每一步点什么」写成 ask-*.json 问宿主对话大模型，宿主答 ans-*.json，浏览器动作由 Playwright 执行、断言由 DOM 独立校验。本 skill 自带内核，装进 skill 目录即可用，无需另装；用例不放在这里，放在用户自己的 git 仓库。用于：给一个网址和一句目标就自动点完一个业务流程；把流程固化成 YAML 用例反复跑；界面大改后重录；CI 里零模型复跑；iframe / shadow DOM / 新标签 / 原生对话框里点控件；或临时探索一个不熟悉的页面看它能点什么。会消耗模型 token，除非跑的是已录好的回放。
 ---
 
 # ui-agent：让宿主模型开浏览器，把跑通的路径录成回放
 
-**这个文件夹是自足的**：文档 + 内核 + 样例用例在一起，整个拷进 skill 目录就能跑，不用另装别的东西。
+**这个文件夹是自足的**：文档 + 内核在一起，整个拷进 skill 目录就能跑，不用另装别的东西。
 
 ```
 ui-agent/
   SKILL.md          ← 你正在读
-  references/       8 篇，按下面的路由表挑
-  scripts/          bootstrap.ps1 / bootstrap.sh（幂等自检 + 装依赖）
+  references/       11 篇，按下面的路由表挑
+  scripts/          bootstrap.ps1 / bootstrap.sh（装依赖）
+                    host_loop.py（宿主循环参考实现）
+                    check_docs.py（文档与内核一致性校验）
   kernel/           内核本体（自己的一份，独立虚拟环境）
-  examples/cases/   两个能直接跑的样例：offline（离线夹具，不联网）+ big-fish（真实站点）
 ```
 
+**用例不在这里。** 用例库是用户自己的一个 git 仓库，位置由用户给（见 [references/cases-repo.md](references/cases-repo.md)）。
+
 所有命令都在 **`kernel/` 目录下**执行，或者用 `uv run --project <本包>/kernel ui-agent ...` 从任意目录调。
-**用例放哪由你定**——内核不要求用例在包内，`--in` / `--plan-file` 收绝对路径或任意相对路径。
 
 运行产物（`runs/`、`cache/`、登录态 profile）默认写到 `kernel/.artifacts/`。
-skill 目录只读、或你想让产物集中到别处，就设 `UI_AGENT_ARTIFACTS_DIR=<可写目录>`。
+**每次运行都该显式给 `--run-dir`，指到用例库那个场景的 `outputs/` 下**，否则产物散在 skill 包里，
+既进不了版本控制，也会在升级 skill 时丢掉。
 
 三层分工，任何时候都别混：
 
 | 层 | 谁做 | 说明 |
 |---|---|---|
 | 编排 / 裁决 | **你**（宿主对话模型） | 决定走哪一步、卡住了怎么办、这次算不算过 |
-| 决策 | Jev（HTTP）**或** 你（走文件桥）**或** 回放缓存 | 二选一，`--decider` 定 |
+| 决策 | Jev（HTTP）**或** 你（走文件桥）**或** 回放缓存 | 三选一，`--decider` 定 |
 | 执行 | Playwright（内核，无 LLM） | 点、输、滚、传文件、读 DOM、跑断言 |
 
 内核把「问模型」的位置做成文件桥：`<run-dir>/bridge/ask-0003.json` 等你写 `ans-0003.json`。
@@ -38,12 +41,15 @@ skill 目录只读、或你想让产物集中到别处，就设 `UI_AGENT_ARTIFA
 | 你在做 | 读 |
 |---|---|
 | 第一次用，或换机器、装依赖、确认浏览器在 | [references/setup.md](references/setup.md) |
+| 要建 / 接一个用例库，或决定产物放哪 | [references/cases-repo.md](references/cases-repo.md) |
 | 写 / 改用例 YAML，或 `case compile` 报错 | [references/cases.md](references/cases.md) |
 | 起一次 run，然后循环 `bridge wait` → 处置 → `bridge answer` | [references/running.md](references/running.md) |
 | 收到 `kind=supervise` 的 ask，要选 HINT/RECOVER/REPLAN/ABORT | [references/supervising.md](references/supervising.md) |
 | 收到 `kind=decide` 的 ask，要答 operation + target | [references/deciding.md](references/deciding.md) |
 | 还没有用例，要先探索页面 | [references/exploring.md](references/exploring.md) |
+| 控件在 iframe / shadow DOM 里，或被遮挡、开新标签、弹原生对话框 | [references/m3.md](references/m3.md) |
 | 跑挂了：`stuck` / `check_failed` / `cache_missed` / 回放对不上 | [references/debugging.md](references/debugging.md) |
+| 要调默认值，或者不知道哪个环境变量管这件事 | [references/envs.md](references/envs.md) |
 | 要处理密码、`--var`、产物落盘、能不能贴日志 | [references/security.md](references/security.md) |
 
 环境没装好就别往下读——一条命令先自检：
@@ -55,7 +61,7 @@ skill 目录只读、或你想让产物集中到别处，就设 `UI_AGENT_ARTIFA
 ./scripts/bootstrap.sh           # macOS / Linux
 ```
 
-幂等（已装的跳过），退出码 0 = 就绪。`-CheckOnly` / `--check` 只报告。
+幂等（已装的跳过），退出码 0 = 就绪。`-CheckOnly` / `--check` 只报告、不写盘。
 装的东西只落在本包内：`kernel/.venv`（依赖）与 `kernel/.browsers`（Chromium，约 400 MB）。
 
 ## 铁律
@@ -75,6 +81,7 @@ skill 目录只读、或你想让产物集中到别处，就设 `UI_AGENT_ARTIFA
 9. **密钥只进环境变量 / `--var`，不进 goal、不进 YAML 字面量、不进对话。**
 10. **停下来了就是停下来了。** `blocked` / `stuck` / `cache_missed` / `aborted` 不是「再试一次就好」——
     读 `result.json` 的 `detail`，判断是改用例、改参数，还是这页面真做不到。
+11. **产物写进用例库的 `outputs/`，不写进本包。** 每次运行显式 `--run-dir`；`outputs/` 默认不进版本库。
 
 ## 四档开关：先定这次谁花钱
 
@@ -92,89 +99,122 @@ skill 目录只读、或你想让产物集中到别处，就设 `UI_AGENT_ARTIFA
 - 已经有能用的录像、只想验证 → **全关**。
 - `--decider agent` / `--supervisor agent` **必须显式给 `--run-dir`**：内核要在起浏览器之前就知道桥目录。
 
+## 文件桥还是 MCP：默认走文件桥
+
+内核把「问模型」的位置抽象成一层协议，两种壳都能接：
+
+| | 文件桥（默认） | MCP（可选） |
+|---|---|---|
+| 你怎么用 | `ui-agent run ...` 后台起进程，再 `bridge wait` / `bridge answer` | MCP server 暴露 `ui_agent_start` / `next` / `answer` / `status` / `abort` |
+| 前置条件 | 能跑后台命令 | `uv sync --extra mcp`，且宿主支持 MCP |
+| 参数面 | 完整（`run` 的全部开关） | 一部分（起 run 的那几个） |
+| 超时 | 你自己控（`bridge wait --timeout`） | server 侧有上限 |
+| 适合 | 绝大多数情况 | 宿主跑不了后台进程，或连 shell 引号都难传 |
+
+**默认走文件桥**：它的参数面是全的，你能设 `--relearn`、`--mask-vars`、五个开销旋钮、`--check`，
+也能在 run 进行到一半时读 `ask-*.json` 复盘。MCP 壳只是同一套协议的另一层包装，能力是子集。
+
+什么时候可以考虑 MCP（由你判断，不要默认开）：
+
+| 情形 | 用 MCP |
+|---|---|
+| 宿主**起不了后台进程**（只允许一次一个工具调用，内核会被掐死） | ✅ 唯一解 |
+| 传参要过一层难搞的 shell（编码、引号、中文 `--var` 被解成乱码） | ✅ 省事 |
+| 要在同一个会话里管多个 run，靠 server 的 `status` / `abort` | ✅ 顺手 |
+| 需要用 `--relearn` / `--mask-vars` / 开销旋钮 / `--check` | ⚠ 得绕 `extra_args` 透传 |
+| 想中途读 `ask-*.json` 复盘、或进程崩了要接着答 | ❌ 文件桥 |
+
+MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
+`ui_agent_start` 的 `extra_args` 可以透传其余 `run` 开关，例如
+`{"plan_file": "...", "extra_args": ["--relearn", "--settle-ms", "1500"]}`；
+但 `--run-dir` / `--decider` / `--supervisor` / `--plan-file` / `--goal` / `--goal-file` /
+`--bridge-timeout` / `--json` 会被拒——这些是 server 自己装配桥接线用的。
+`ui_agent_next` 默认等 240s（与 `bridge wait` 同口径），上限 300s。
+
 ## 六步工作流
 
 ```
 ① 环境自检      uv run ui-agent --help 能出子命令；.browsers 里有 chromium
-② 定用例        cases/<场景>/<用例>.yaml  →  case compile 到 0 error  →  取 plan 落 others/*.plan.json
+② 定用例        在用户给的用例库里写 <场景>/<用例>.yaml  →  case compile 到 0 error
+                →  取 plan 落 <场景>/others/<用例>.plan.json
 ③ 定档          按上一节选四档之一；说清这次会不会花 token
-④ 跑            后台起 run（--run-dir 显式） → 循环 bridge wait → 处置 ask → bridge answer → 等 finished
+④ 跑            后台起 run（--run-dir 指到 <场景>/outputs/<时间戳>） → 循环 bridge wait
+                → 处置 ask → bridge answer → 等 finished
 ⑤ 汇报          读 result.json + summary.json：status、每步断言、缺陷候选；status=ok 才算过
 ⑥ 存档          录制成功 ⇒ 下次同命令加 --decider off --supervisor off 即可零 token 复跑
+                用例 YAML + plan.json + 录像进库，outputs/ 默认不进
 ```
 
-第 ② 步的 YAML 是唯一真源；`.plan.json` 是派生物，可随时重建，不手改。
+第 ② 步的 YAML 是唯一真源；`.plan.json` 是派生物，可随时由 YAML 重建，不手改。
 
 ## 快速开始
 
 ### 第一步：不联网、零 token 确认装好了
 
-`examples/cases/offline.yaml` 指向包内自带的页面 `kernel/examples/local_fixture.html`。
-下面三条都不花 token，能一路验到「浏览器起得来、DOM 读得到、用例编译过」：
+三条都不碰模型，一路验到「浏览器起得来、DOM 读得到」：
 
 ```bash
 # 都在 kernel/ 目录下执行
-uv run ui-agent case compile --in ../examples/cases/offline.yaml --json   # → ok: true
-uv run ui-agent snapshot --url "file:///D:/path/to/ui-agent/kernel/examples/local_fixture.html" --json  # → element_count: 18
-uv run ui-agent snapshot --url https://example.com --json                 # → 验外网与浏览器
+uv run ui-agent --help                                                    # 子命令齐全
+uv run python scripts/smoke_browser.py                                    # ⚠ 在包根目录跑，不是 kernel/
+uv run ui-agent snapshot --url "$FIXTURE" --json                          # → element_count: 18
 ```
+
+`$FIXTURE` 是包内自带的离线页面 `kernel/examples/local_fixture.html`——**它只是一个测试页，不是用例**。
 
 本地文件必须是**合法的 file URL**：`file:///` + 绝对路径 + **正斜杠**。拼错了 Chromium 会报
 `navigating to "file:////d/..."` 并抛 `net::ERR_FILE_NOT_FOUND`。三种 shell 的正确拼法：
 
-| shell | 拼法 |
+| shell | 拼法（在 `kernel/` 里） |
 |---|---|
-| PowerShell | `"file:///" + ((Get-Location).Path -replace '\\','/') + "/examples/local_fixture.html"` |
-| Git Bash（Windows） | `"file:///$(cygpath -m "$(pwd)")/examples/local_fixture.html"` |
-| Linux / macOS | `"file://$(pwd)/examples/local_fixture.html"` |
+| PowerShell | `$FIXTURE = "file:///" + ((Get-Location).Path -replace '\\','/') + "/examples/local_fixture.html"` |
+| Git Bash（Windows） | `FIXTURE="file:///$(cygpath -m "$(pwd)")/examples/local_fixture.html"` |
+| Linux / macOS | `FIXTURE="file://$(pwd)/examples/local_fixture.html"` |
 
 **别用 `file:///$PWD`**：Git Bash 的 `$PWD` 是 `/d/...`，拼出来 `file:////d/...`（四斜杠）打不开。
 
-### 第二步：录一次，之后永久免费
+### 第二步：写第一个用例，录一次，之后永久免费
 
-离线样例的完整闭环（实测 6 次决策：填账号 → 填密码 → 点确定 → 点查询 → DONE，第 2 步再 1 次 DONE；
-录完就再也不用模型）。先把夹具地址存进变量，避免每行都写长路径：
+用例放在**你自己的用例库**里（还没有库？见 [cases-repo.md](references/cases-repo.md)）。
+下面这段存成 `<用例库>/demo/login-query.yaml`——这就是用例的完整形状，也是文档里唯一的示例结构：
 
-```bash
-# Git Bash（Windows）—— cygpath -m 给 D:/...，拼出来才是合法 URL
-FIXTURE="file:///$(cygpath -m "$(pwd)")/examples/local_fixture.html"
+```yaml
+id: login-query                 # 缓存身份：定了就别改，改了等于换一份录像
+title: 登录后查询
+notes: 示例结构。页面是任意一个「账号 + 密码 + 确定 + 查询」的界面。
+
+steps:
+  - goal: 在「账号」和「密码」里填入给定值，然后点击「确 定」
+    checks:
+      - element_exists: 查询
+  - goal: 点击「查询」，等结果出现
+    checks:
+      - text_contains: 查询完成
 ```
 
-```bash
-# Linux / macOS
-FIXTURE="file://$(pwd)/examples/local_fixture.html"
-```
-
-```powershell
-# PowerShell
-$FIXTURE = "file:///" + ((Get-Location).Path -replace '\\','/') + "/examples/local_fixture.html"
-```
+跑之前先把 `账号` / `密码` 留在命令行（**YAML 里不写凭据**）：
 
 ```bash
-uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
-  --url "$FIXTURE" \
-  --decider agent --supervisor off --relearn \
+# ① 编译到 0 error，顺手把 plan 落到 others/
+uv run ui-agent case compile --in "$CASE" --json > /tmp/plan.json
+# ② 首次录制（会问你 ask，见 references/running.md；宿主循环可直接用 scripts/host_loop.py）
+uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
+  --url "$URL" --decider agent --supervisor off --relearn \
   --var 账号=demo --var 密码=demo \
-  --run-dir .artifacts/runs/offline-rec --json
-```
-
-`--decider agent` 会停下来等你答 `ask-*.json`——这就是 [references/running.md](references/running.md)
-讲的 `bridge wait` / `bridge answer` 循环。录成功后再加 `--decider off` 跑同一条命令，就是 0 token 回放：
-
-```bash
-uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
-  --url "$FIXTURE" \
-  --decider off --supervisor off \
+  --run-dir "$OUT" --json
+# ③ 之后每次零 token 复跑：只改 --decider
+uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
+  --url "$URL" --decider off --supervisor off \
   --var 账号=demo --var 密码=demo \
-  --run-dir .artifacts/runs/offline-rep --json
+  --run-dir "$OUT" --json
 ```
 
-**`--var` 每次都要带同样的键**：录像只认动作序列，不认变量值（实测回放时把
-`账号=sysadmin` 换成 `账号=demo-user` 照样 `hits=6`、`ok`）；但**缺了那个键**，输入动作当场判不成立，
+想先拿包内的离线夹具把这条流程走通，把 `$URL` 设成上面的 `$FIXTURE` 即可——夹具正好是
+「账号 + 密码 + 确定 + 查询」的形状，两条命令都能跑过。
+
+**`--var` 每次都要带同样的键**：录像只认动作序列，不认变量值（回放时把
+`账号=demo` 换成 `账号=other` 照样命中）；但**缺了那个键**，输入动作当场判不成立，
 录像被当失败牵连淘汰（`write: evicted`，之后变 `no-entry`）。回放还要用**同一个 `--url`**——键里含环境地址。
-
-真实站点的例子是 `examples/cases/big-fish.yaml`（必应搜索 + 翻页），把 `--decider agent` 换成
-`--decider jev --url https://cn.bing.com/` 即可，其余同理。
 
 判断回放真的没调模型：根 `trace.jsonl` 里每行 `decision` 的 `model == "cache"`，
 且倒数第二行是 `cache` 行、`hits > 0`、`misses == 0`。
@@ -187,14 +227,40 @@ uv run ui-agent run --plan-file ../examples/cases/offline.plan.json \
 | `run` | 跑一个 goal 或 plan，读写录像 | 除 `--decider off` 外都会 |
 | `explore` | 只给目标让 agent 自己走，导出轨迹 + 用例骨架 | 会（默认 `--decider agent`） |
 | `case compile` | 校验用例 YAML → plan | 不会（纯本地） |
-| `case draft` | 自然语言 → 用例草稿 | 会 |
-| `plan` | 自然语言流程 → 分步计划 | 会 |
+| `case draft` | 自然语言 → 用例草稿（走 HTTP 文本模型） | 会 |
+| `plan` | 自然语言流程 → 分步计划（走 HTTP 文本模型） | 会 |
 | `snapshot` | 只快照不动作，看喂给模型的 state | 不会 |
 | `report` | 按 run 目录重出 HTML 报告 | 不会 |
 | `bridge wait` | 等下一个 ask / heartbeat / 终态 | 不会 |
 | `bridge answer` | 落一份答复 | 不会 |
 
+`case draft` 与 `plan` 是**另一条路**：它们让 HTTP 文本模型写用例/计划，和「你自己写 YAML」互斥。
+主路线是你亲手写 YAML（断言必须由懂业务的人定），这两个只在「先要个草稿」时用，产出仍要人工审。
+它们是**唯一用到 `--desc` / `--desc-file`** 的两个子命令：`case draft --desc "自然语言描述" --url <入口>`，
+`plan --desc-file goal.txt --url <入口> --out <落点.json>`。长文本走 `--desc-file`，避免 shell 引号。
+
+其余几个不常用但存在的开关：
+
+| 开关 | 在哪 | 干什么 |
+|---|---|---|
+| `--goal-file` | `run` / `explore` | 目标太长就写进文件；与 `--goal` 互斥 |
+| `--task` | `run` | run 目录名的前缀（默认 `task`）。想看产物目录名叫得有意义就设它 |
+| `--note` | `bridge answer` | 给这条答复留一句备注，写进 `ans-*.json`，事后审计用 |
+
+`run` 的三个入口互斥：`--goal` / `--goal-file` / `--plan-file`，必须给一个。
 `bridge` 子命令走薄入口，冷启动约 0.1s；`run`/`explore` 连带 playwright，约 0.8s。
 宿主会调 `bridge` 几十上百次，所以两者刻意分开。
 
 退出码：`0` 成功、`1` 用例失败（`--json` 仍有效）、`2` 内核/参数错误。
+
+## 自检这份文档有没有跟内核脱节
+
+内核改了、文档没改，是最难发现的错。一条命令能查出来：
+
+```bash
+python scripts/check_docs.py        # 只需要 python 3.9+，不 import 内核
+```
+
+它从源码里抽词表（8 种断言、11 个停机状态、缓存词表、13 种操作、全部 CLI 开关），
+逐条确认文档写了；再检查 SKILL.md 的路由表覆盖了每一篇 references、没有断链、
+没有只对开发树成立的路径、包里没有混进用例。退出码 0 = 一致。

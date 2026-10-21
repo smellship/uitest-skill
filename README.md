@@ -12,12 +12,12 @@ ui-agent/        发布的 skill 包 —— 自足，整个目录丢进宿主的
                  check_docs.py（文档与内核一致性校验）
   kernel/        内核本体（本包自带一份，独立 .venv）
 kernel/          内核开发树（源码 / 测试 / 冒烟脚本 / spec）
-cases/           用例库：场景/YAML（单独一个 git 仓库，**不进 skill 包**）
 HANDOFF.md       从零接手这份工作要读的全部背景（包含目录边界与硬约束）
 spec-explore.md  探索出用例的设计（explore → 写 YAML → 录制 → 零 token 回放）
 ```
 
-**skill 包里没有用例。** 用例是用户自己的资产（断言由懂业务的人定），放在他们自己的 git 仓库里；
+**本仓库没有用例，也不该有。** 用例跟着被测系统走，改得比内核勤，混在一起会让每次升级都撞上一堆用例改动。
+用例放在独立的仓库里（示例：<https://github.com/smellship/case_demo>），
 skill 只教怎么写、怎么跑、产物放哪。包里唯一带的是一个离线测试页
 `ui-agent/kernel/examples/local_fixture.html`——它是**夹具**，不是用例。
 

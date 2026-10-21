@@ -3,6 +3,10 @@
 **本 skill 包不含任何用例。** 用例是一个独立的 git 仓库，由用户给地址、分支（可选给本地路径）。
 理由：用例跟着被测系统走，改得比内核勤；混在一起会让 skill 每次升级都撞上一堆用例改动。
 
+现成的示例库：<https://github.com/smellship/case_demo>——结构、README、`.gitignore` 都照它来。
+用户还没库的时候，直接 clone 这个当起点（换掉里面的场景目录即可）。
+
+
 ## 用户必须给你三件事
 
 | 项 | 例子 | 缺了怎么办 |
@@ -133,5 +137,5 @@ uv run ui-agent run --goal "在「账号」和「密码」里填入给定值，�
 1. 用户给了地址 → clone。
 2. 用户只给了个本地目录（已存在 YAML）→ 直接用，别 clone。
 3. 用户什么都没给 → **问一句**「用例放哪个仓库/目录？」。别自己造一个塞进 skill 包目录。
-4. 用户说「随便」→ 在 `<工作目录>/ui-cases` 建库并 `git init`，把结构树和 `.gitignore` 先放进去，
-   然后告诉用户「库建在 X，要接到远端就 `git remote add origin <地址>`」。
+4. 用户说「随便」→ clone 示例库 <https://github.com/smellship/case_demo> 到 `<工作目录>/ui-cases`，
+   删掉里面与本项目无关的场景目录，再按上面的结构补自己的。

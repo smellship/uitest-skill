@@ -35,6 +35,28 @@ uv run ui-agent explore --url https://example.com/ \
 `--supervisor` 在 explore 里可以 `on` / `off` / `agent`：卡住时要不要人救。
 `--decider` 只接受 `jev` / `agent`（不会给你 `off` —— 没录像可回放）。
 
+### 用 host_loop 跑探索（推荐）
+
+```bash
+python scripts/host_loop.py --explore \
+  --run-dir "$OUT" --profile-dir "$OUT/.profile" \
+  --goal-file "$GOAL_FILE" \
+  --url "$URL" \
+  --policy scripts/explore_policy.py \
+  --decider agent --supervisor off
+```
+
+`--explore` 让它走 `explore` 子命令而不是 `run`：不传 `--check`、不传 `--cache`、不传 `--relearn`。
+通过判定也变了——`status` 是 `ok` **或** `done_unverified` 都算跑完（探索本来就没有断言，
+`done_unverified` 就是它的正常收尾）。
+
+`--goal-file` 而不是 `--goal`：中文长目标过 shell 会被 PowerShell 按 ANSI 重编码，
+内核收到乱码直接报 `unrecognized arguments`。内核按 `utf-8-sig` 读这个文件。
+
+探索阶段**每次该点哪儿都取决于刚看到的页面**，所以别急着写 policy：
+用 `scripts/ask.py show` 看候选、`scripts/ask.py answer` 作答（见 [running.md](running.md)）。
+摸清路径之后再把它固化成 policy 或直接写 YAML。
+
 ## 产物
 
 `<run-dir>/explore/` 下四件：

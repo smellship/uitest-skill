@@ -298,23 +298,31 @@ def kernel_python(kernel: Path) -> tuple[str, bool]:
 
 def build_command(args, kernel: Path) -> list[str]:
     python, in_venv = kernel_python(kernel)
-    cmd = [python, *KERNEL_ENTRY, "run", "--run-dir", str(Path(args.run_dir).resolve()), "--json"]
+    sub = "explore" if args.explore else "run"
+    cmd = [python, *KERNEL_ENTRY, sub, "--run-dir", str(Path(args.run_dir).resolve()), "--json"]
     cmd += ["--decider", args.decider, "--supervisor", args.supervisor]
     if args.plan_file:
         # 子进程的 cwd 是 kernel/，相对路径按调用方的 cwd 解析才不会错
         cmd += ["--plan-file", str(Path(args.plan_file).resolve())]
     if args.goal:
         cmd += ["--goal", args.goal]
+    if args.goal_file:
+        # 走内核自己的 --goal-file（它按 utf-8-sig 读，能容忍 BOM），中文不过命令行
+        cmd += ["--goal-file", str(Path(args.goal_file).resolve())]
     if args.url:
         cmd += ["--url", args.url]
     for check in args.check:
+        if args.explore:
+            break       # explore 没有 --check：它按定义不带断言（结果就是 done_unverified）
         cmd += ["--check", check]
     for item in args.var:
         cmd += ["--var", item]
-    if args.relearn:
-        cmd += ["--relearn"]
-    if args.cache is not None:
-        cmd += ["--cache", args.cache]
+    if not args.explore:
+        # explore 不录制也不读录像：--relearn / --cache 只对 run 有意义
+        if args.relearn:
+            cmd += ["--relearn"]
+        if args.cache is not None:
+            cmd += ["--cache", args.cache]
     if args.mode:
         cmd += ["--mode", args.mode]
     if args.bridge_timeout is not None:
@@ -359,6 +367,9 @@ def run(args) -> int:
         key, _, value = item.partition("=")
         variables[key.strip()] = value.strip()
     policy = load_policy(args.policy, variables)
+    goal = args.goal
+    if args.goal_file:
+        goal = Path(args.goal_file).read_text(encoding="utf-8-sig").strip()
 
     cmd = build_command(args, kernel)
     log_path = run_dir / "host_loop.stdout.log"
@@ -396,7 +407,7 @@ def run(args) -> int:
 
             status = bridge.status(since=started_wall)
             if status.get("state") in ("finished", "crashed"):
-                exit_code = _report(bridge, status, answered)
+                exit_code = _report(bridge, status, answered, explore=args.explore)
                 return exit_code
 
             item = bridge.pending()
@@ -406,7 +417,8 @@ def run(args) -> int:
                     say(f"✗ 已答 {answered} 次，达到 --max-asks，停")
                     proc.kill()
                     return 2
-                ctx = {"run_dir": run_dir, "bridge_dir": bridge.dir, "vars": variables, "goal": args.goal}
+                ctx = {"run_dir": run_dir, "bridge_dir": bridge.dir, "vars": variables,
+                       "goal": goal}
                 try:
                     answer = answer_with(policy, ask, ctx)
                 except SystemExit:
@@ -426,7 +438,7 @@ def run(args) -> int:
                 time.sleep(POLL_S)
                 status = bridge.status(since=started_wall)
                 if status.get("state") in ("finished", "crashed"):
-                    return _report(bridge, status, answered)
+                    return _report(bridge, status, answered, explore=args.explore)
                 say(f"✗ 内核进程退出（code={proc.returncode}），但没写终态")
                 say(f"  内核输出见 {log_path}")
                 return 2
@@ -464,20 +476,21 @@ def _wait_without_bridge(proc, bridge: Bridge, args, log_path: Path) -> int:
             # 退出码 1 是「用例没过」，不是内核崩：状态一律按 finished 报，
             # 成败由 result.json 的 status 决定（与有桥路径同口径）。
             status = {"state": "finished", "detail": f"exit={proc.returncode}"}
-            return _report(bridge, status, 0)
+            return _report(bridge, status, 0, explore=args.explore)
         time.sleep(POLL_S)
     proc.kill()
     say(f"✗ 超过总时限 {args.max_seconds:.0f}s，停")
     return 2
 
 
-def _report(bridge: Bridge, status: dict, answered: int) -> int:
+def _report(bridge: Bridge, status: dict, answered: int, explore: bool = False) -> int:
     state = status.get("state")
     detail = status.get("detail") or ""
     result = bridge.result() or {}
     # 注意：result.json / summary.json **没有** `ok` 字段（那是 CLI 的 --json 才拼的），
-    # 判成功只能看 status。
-    ok = result.get("status") == "ok"
+    # 判成功只能看 status。explore 没有断言，正常收尾就是 done_unverified。
+    passed = ("ok", "done_unverified") if explore else ("ok",)
+    ok = result.get("status") in passed
     say("")
     say(f"内核终态：{state}（{detail}）")
     if result:
@@ -504,6 +517,12 @@ def _report(bridge: Bridge, status: dict, answered: int) -> int:
             say("  可用性缺陷候选：")
             for item in defects:
                 say(f"    ⚠ {item}")
+    if explore:
+        folder = bridge.dir.parent / "explore"
+        for name, title in (("trajectory.md", "轨迹"), ("explored.yaml", "用例骨架")):
+            path = folder / name
+            if path.is_file():
+                say(f"  {title}     : {path}")
     say(f"宿主共作答 {answered} 次")
     if state == "crashed":
         return 2
@@ -523,6 +542,11 @@ def main(argv: list[str] | None = None) -> int:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--plan-file", help="plan.json 路径")
     target.add_argument("--goal", help="自然语言目标（单目标模式）")
+    target.add_argument("--goal-file", help="目标写在一个 UTF-8 文件里（中文长目标别过 shell："
+                                            "PowerShell 会把参数按 ANSI 重编码，内核收到乱码）")
+    parser.add_argument("--explore", action="store_true",
+                        help="走 explore 而不是 run：不录制、不验收，产物在 <run-dir>/explore/"
+                             "（trajectory.md + explored.yaml 骨架），正常收尾是 done_unverified")
     parser.add_argument("--url", help="入口地址；单目标必填")
     parser.add_argument("--check", action="append", default=[], help="验收断言（kind=值），可重复")
     parser.add_argument("--var", action="append", default=[], metavar="键=值", help="字段值，可重复")
@@ -540,8 +564,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--extra", action="append", default=[], help="原样追加给内核的参数，可重复")
     parser.add_argument("--quiet", action="store_true", help="只打结果")
     args = parser.parse_args(argv)
-    if args.goal and not args.url:
+    if (args.goal or args.goal_file) and not args.url:
         parser.error("单目标模式必须给 --url")
+    if args.explore and args.plan_file:
+        parser.error("--explore 只走单目标（--goal / --goal-file），不接受 --plan-file")
     try:
         return run(args)
     except KeyboardInterrupt:

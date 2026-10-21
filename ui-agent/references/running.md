@@ -89,6 +89,36 @@ python scripts/host_loop.py \
 里面给 `answer(ask, ctx)`（或分开的 `decide` / `supervise` / `text` 三个函数）。
 **decide 的返回值要多包一层**：`{"answers": {...}}`，不是直接把 answers 交回去。
 
+另外两个开关：
+
+- `--profile-dir <目录>`：浏览器登录态目录。并发跑多路时**每路必须不同**
+  （Chromium 对同一个 `user-data-dir` 加单实例锁），见 [parallel.md](parallel.md)。
+- `--goal-file <文件>`：目标写在 UTF-8 文件里。**中文长目标一律用它**——PowerShell 传中文参数会按
+  ANSI 重编码，内核收到乱码后报 `unrecognized arguments`。
+- `--explore`：走 `explore` 而不是 `run`（不录制、不验收），见下面「explore」。
+
+## 不想写 policy：用 `scripts/ask.py` 一问一答
+
+策略模块适合「规则已经清楚」的用例。**还在摸路、每次该点哪儿都要看页面**的时候，
+逐条手动作答更直接——`ask.py` 把一条 ask 压成几十行的摘要（原始 `ask-*.json` 可以有
+300 KB / 250 个元素，**永远不要直接读它**）：
+
+```bash
+python scripts/ask.py show --run-dir "$OUT"                 # 当前待答的是什么、有哪些候选
+python scripts/ask.py show --run-dir "$OUT" --grep "run query"   # 只在候选里搜关键字
+python scripts/ask.py answer --run-dir "$OUT" --op CLICK --target 36
+python scripts/ask.py answer --run-dir "$OUT" --done
+python scripts/ask.py answer --run-dir "$OUT" --op TYPE_TEXT --target 7 --text "2026-10-21"
+python scripts/ask.py answer --run-dir "$OUT" --error "权限不足，打不开这个菜单"
+```
+
+`show` 打印：目标、页面标题与截断 URL、正文前 600 字、可选操作、每个目标 head 的候选
+（`键  标签` 两列，`--limit` 默认 40）、以及**该敲哪条 `answer` 命令**。
+`answer` 自己造一份能过 `validate_choice` 的答复（覆盖全部候选键、和=1、被选概率最大），
+所以不用手写 `probabilities`。`--id` 与当前待答 ask 不符会直接拒绝，防止答到上一轮变 `stale`。
+
+它只认文件协议、**不 import 内核**，所以哪个 python 都能跑。
+
 ## `wait` 的四种返回
 
 ```json

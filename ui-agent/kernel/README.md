@@ -199,7 +199,9 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 
 ```
 ui-agent/
-  SKILL.md       references/（12 篇）      scripts/{bootstrap.{ps1,sh},host_loop.py,parallel_run.py,check_docs.py}
+  SKILL.md       references/（12 篇）
+  scripts/       bootstrap.{ps1,sh} / host_loop.py / ask.py / explore_policy.py /
+                 parallel_run.py / check_docs.py
   kernel/                  ← build_skill.py 生成的内核副本（src / examples / pyproject / uv.lock / …
                                不含 tests、.venv、.artifacts、.browsers）
 ```
@@ -225,7 +227,7 @@ uv run python scripts/build_skill.py            # 同步（先删 ui-agent/kerne
 uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1
 ```
 
-skill 内容（12 篇 reference + 双平台 bootstrap + 三个自检/编排脚本）：
+skill 内容（12 篇 reference + 双平台 bootstrap + 四个自检/编排/问答脚本）：
 
 | 文件 | 讲什么 |
 |---|---|
@@ -243,6 +245,8 @@ skill 内容（12 篇 reference + 双平台 bootstrap + 三个自检/编排脚�
 | `references/security.md` | secret 与非 secret 两条路、落盘边界、探索产物为什么只写来源 |
 | `references/parallel.md` | 多开：profile 隔离、run-dir 隔离、`parallel_run.py`、子 agent 分工与上限 |
 | `scripts/host_loop.py` | 宿主循环参考实现（标准库、不 import 内核、按 st_mtime 判 ask） |
+| `scripts/ask.py` | 把一条 ask 压成摘要（`show`）并按契约作答（`answer`）：300 KB 的原始 ask 不该进模型上下文 |
+| `scripts/explore_policy.py` | 探索用通用策略：点一次提交按钮就收，给 `host_loop.py --explore` 用 |
 | `scripts/parallel_run.py` | 多路并行编排（起 N 个 host_loop、分配 profile/产物目录、按 status 汇总） |
 | `scripts/check_docs.py` | 文档与内核一致性校验（词表 / 默认值 / 开关 / 断链 / 包内不许有用例） |
 

@@ -13,6 +13,8 @@ ui-agent/
   references/       12 篇，按下面的路由表挑
   scripts/          bootstrap.ps1 / bootstrap.sh（装依赖）
                     host_loop.py（宿主循环参考实现）
+                    ask.py（压缩查看并作答一条桥问答）
+                    explore_policy.py（探索用的通用策略：点一次提交按钮就收）
                     parallel_run.py（多路并行编排）
                     check_docs.py（文档与内核一致性校验）
   kernel/           内核本体（自己的一份，独立虚拟环境）
@@ -159,6 +161,8 @@ MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
 ## 六步工作流
 
 ```
+⓪ 先探路（可选）  页面不熟就用 explore 走一遍：不录制、不看断言，只导出轨迹 + 用例骨架
+                → <run-dir>/explore/{trajectory.md, explored.yaml}，见 references/exploring.md
 ① 环境自检      uv run ui-agent --help 能出子命令；.browsers 里有 chromium
 ② 定用例        在用户给的用例库里写 <场景>/<用例>.yaml  →  case compile 到 0 error
                 →  --out 把 plan 落 <场景>/others/<用例>.plan.json
@@ -171,6 +175,20 @@ MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
 ```
 
 第 ② 步的 YAML 是唯一真源；`.plan.json` 是派生物，可随时由 YAML 重建，不手改。
+
+**⓪ 不要跳**：不熟的页面凭想象写 `goal` 和断言，九成要在 ④ 里返工重录（每次重录都重新烧一遍 token）。
+探索的成本只是一次单目标运行，而且**不产生录像**——所以它永远不会污染回放。
+反过来，如果页面你已经很熟、或者已有能用的录像，就别 explore，直接写 YAML 跑。
+
+探索阶段**每次点哪儿都取决于刚看到的页面**，所以别急着写 policy，用 `scripts/ask.py` 一问一答：
+
+```bash
+python scripts/ask.py show --run-dir "$OUT" --grep "查询"   # 看当前待答什么、候选里哪个对
+python scripts/ask.py answer --run-dir "$OUT" --op CLICK --target 36
+```
+
+原始 `ask-*.json` 可以到 300 KB（250 个元素的整页快照），**永远不要直接读它**——
+`ask.py show` 会把它压成几十行摘要，`ask.py answer` 会自己造一份合法答复。
 
 ## 快速开始
 

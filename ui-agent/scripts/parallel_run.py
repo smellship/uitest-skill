@@ -15,10 +15,10 @@ Chromium 对 user-data-dir 加单实例锁，共用会让后起的那路直接�
     python scripts/parallel_run.py --manifest jobs.json
 
     python scripts/parallel_run.py --out /tmp/runs --max-parallel 2 \
-        --job local=../cases/本地夹具/others/local-fixture.plan.json \
-        --url file:///.../local_fixture.html --var 账号=a --var 密码=b \
-        --job bing=../cases/大肥鱼/others/bing-search-paging.plan.json \
-        --url https://cn.bing.com --var 输入搜索词=大肥鱼
+        --job login=<用例库>/登录/others/login-query.plan.json \
+        --url https://example.internal/login --var 账号=a --var 密码=b \
+        --job bill=<用例库>/票据/others/bill-query.plan.json \
+        --url https://example.internal/bills --var 单据号=2024001
 """
 
 from __future__ import annotations

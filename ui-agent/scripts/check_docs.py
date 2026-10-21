@@ -339,6 +339,62 @@ def check_no_runtime(rep: Report) -> None:
         rep.ok("skill 包里没有运行产物")
 
 
+def check_scripts(rep: Report) -> None:
+    """scripts/ 里的每个脚本都得在 SKILL.md 里点名，文档提到的脚本都得真存在。
+
+    这一组是为「加了脚本忘了写文档」和「文档写了还没做」两个方向设的。历史上两种都发生过：
+    `host_loop.py` 写好了但文档只字未提；`ask.py` 文档里已经教人用了，脚本还没提交。
+    """
+    print("脚本：scripts/ 与文档是否对得上")
+    scripts = sorted(p.name for p in (SKILL_ROOT / "scripts").glob("*") if p.is_file())
+    if not scripts:
+        rep.fail("scripts/ 是空的")
+        return
+    skill = read(SKILL_ROOT / "SKILL.md")
+    for name in scripts:
+        if name in skill:
+            rep.ok(f"SKILL.md 提到了 scripts/{name}")
+        else:
+            rep.fail(f"scripts/{name} 没在 SKILL.md 出现（宿主不会知道有这个脚本）")
+
+    # 反向：文档里写 `scripts/xxx.py` 的，文件得在（本包 scripts/ 或 kernel/scripts/ 都算）。
+    # smoke_browser.py 是内核自检脚本，文档教的是「在 kernel/ 下跑 scripts/smoke_browser.py」。
+    pattern = re.compile(r"(?<!kernel/)(?<!/)scripts/([A-Za-z0-9_.-]+\.(?:py|sh|ps1))")
+    mentioned = set(pattern.findall(skill))
+    for doc in REFS.glob("*.md"):
+        mentioned.update(pattern.findall(read(doc)))
+    for name in sorted(mentioned):
+        if (SKILL_ROOT / "scripts" / name).is_file() or (KERNEL / "scripts" / name).is_file():
+            rep.ok(f"文档提到的 scripts/{name} 存在")
+        else:
+            rep.fail(f"文档提到 scripts/{name}，但本包 scripts/ 与 kernel/scripts/ 都没有")
+
+    # stdlib-only 是这几类的硬约束：宿主机器不一定装过内核的依赖。
+    # 用 AST 判 import，别用字符串匹配——这个文件自己的检查逻辑里就有 "import ui_agent" 字样。
+    for name in ("ask.py", "host_loop.py", "check_docs.py", "explore_policy.py"):
+        path = SKILL_ROOT / "scripts" / name
+        if not path.is_file():
+            continue
+        if _imports_kernel(path):
+            rep.fail(f"scripts/{name} import 了内核；宿主机器上不一定装得上")
+        else:
+            rep.ok(f"scripts/{name} 不 import 内核")
+
+
+def _imports_kernel(path: Path) -> bool:
+    """这个脚本有没有 import ui_agent（含 `from ui_agent.x import y`）。"""
+    tree = ast.parse(read(path), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name.split(".")[0] == "ui_agent" for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root == "ui_agent":
+                return True
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_docs", description="校验 skill 文档与内核源码一致")
     ap.add_argument("-v", "--verbose", action="store_true", help="列出每一条通过项")
@@ -356,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     check_outputs(rep)
     check_plan_file(rep)
     check_no_runtime(rep)
+    check_scripts(rep)
 
     print()
     if rep.bad:

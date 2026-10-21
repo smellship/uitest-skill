@@ -138,6 +138,8 @@ ui-agent/
   scripts/
     bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 kernel/.browsers + 验 --help
     host_loop.py                  宿主循环参考实现：起内核 → 读 ask → 作答 → 读终态（标准库，不 import 内核）
+    ask.py                        把一条 ask 压成摘要（show）并按契约作答（answer）：原始 ask 可到 300 KB，不许直接进模型上下文
+    explore_policy.py             探索用通用策略：点一次提交按钮就收，给 host_loop.py --explore 用
     parallel_run.py               多路并行编排：分配 profile/产物目录、并发起 N 个 host_loop、按 status 汇总
     check_docs.py                 文档与内核一致性校验：词表 / 默认值 / 开关 / 断链 / 包内不许有用例与运行产物
   kernel/                         ← build_skill.py 生成：内核最小可运行集（src / examples / pyproject / uv.lock /

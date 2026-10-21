@@ -8,7 +8,6 @@ M2：卡住/阻塞/预算/断言未过时先问一次监督模型，拿到 HINT/
 from __future__ import annotations
 
 import json
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,6 +31,7 @@ from ui_agent.replay.cache import CACHE_SOURCE
 from ui_agent.replay.match import match_next
 from ui_agent.replay.session import ReplaySession, record_from
 from ui_agent.report.html import build_report
+from ui_agent.run.dirs import make_run_dir
 from ui_agent.run.stuck import StuckDetector, StuckSignal
 from ui_agent.run.supervise import Verdict, escalate, recover_decision
 from ui_agent.run.trace import AGGREGATED_KINDS, TraceWriter, now_at
@@ -611,9 +611,7 @@ class Runner:
     # --- 产物 ---
 
     def _make_run_dir(self) -> Path:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        name = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", self.task).strip("_") or "task"
-        return self.s.runs_dir / f"{name}-{stamp}"
+        return make_run_dir(self.s.runs_dir, self.task)
 
     @staticmethod
     def _dump(run_dir: Path, folder: str, step: int, data: dict) -> None:

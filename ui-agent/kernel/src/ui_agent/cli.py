@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from ui_agent.bridge.client import AgentBridge
@@ -28,6 +27,7 @@ from ui_agent.observe.snapshot import build_state, page_summary
 from ui_agent.replay.cache import goal_case_hash
 from ui_agent.replay.session import open_session
 from ui_agent.report.html import build_report
+from ui_agent.run.dirs import make_run_dir
 from ui_agent.run.plan_runner import PlanResult, PlanRunner
 from ui_agent.run.runner import Runner, RunResult
 from ui_agent.run.trace import append_row, cache_row
@@ -85,6 +85,8 @@ def apply_overrides(settings: Settings, args) -> Settings:
         overrides["ui_agent_dialog_policy"] = args.dialog_policy
     if getattr(args, "mask_vars", False):
         overrides["ui_agent_mask_vars"] = True
+    if getattr(args, "profile_dir", None):
+        overrides["ui_agent_profile_dir"] = args.profile_dir
     # 浏览器开销（skill 场景常调；平台不传即保持现状）
     for flag, field in (("settle_ms", "settle_ms"), ("slow_mo", "slow_mo"),
                         ("ready_stable_ms", "ready_stable_ms"),
@@ -357,8 +359,7 @@ def _explore_dir(args, settings: Settings) -> Path:
     """探索必须显式 --run-dir 才有稳定的产物位置；没给就按时间戳生成一个。"""
     if getattr(args, "run_dir", None):
         return Path(args.run_dir)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return settings.runs_dir / f"explore-{stamp}"
+    return make_run_dir(settings.runs_dir, "explore")
 
 
 def _goal_payload(result: RunResult) -> dict:
@@ -472,6 +473,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--assert-timeout-ms", type=int, dest="assert_timeout_ms",
                      help="DONE 验收轮询窗口毫秒（默认 5000）")
     run.add_argument("--run-dir", help="指定产物目录（默认 .artifacts/runs/<任务>-<时间戳>）")
+    run.add_argument("--profile-dir", dest="profile_dir", metavar="浏览器profile目录",
+                     help="登录态 profile 目录（覆盖 UI_AGENT_PROFILE_DIR）。并发跑多个用例时每个进程"
+                          "必须给不同的目录，否则 Chromium 单实例锁会让后起的进程起不来")
     run.add_argument("--json", action="store_true",
                      help="stdout 只输出一份 JSON（人类话术走 stderr），供平台回读")
     run.set_defaults(func=cmd_run)
@@ -507,6 +511,8 @@ def main(argv: list[str] | None = None) -> int:
     snap.add_argument("--url", required=True)
     snap.add_argument("--out", help="写入文件，默认打印到标准输出")
     snap.add_argument("--mode", choices=["debug", "ci"], default="ci")
+    snap.add_argument("--profile-dir", dest="profile_dir", metavar="浏览器profile目录",
+                      help="登录态 profile 目录（覆盖 UI_AGENT_PROFILE_DIR）；并发时每路要不同")
     snap.add_argument("--json", action="store_true",
                       help="stdout 只输出一份 JSON（summary + state），供环境探针回读")
     snap.set_defaults(func=cmd_snapshot)
@@ -539,6 +545,8 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--ready-timeout-ms", type=int, dest="ready_timeout_ms")
     exp.add_argument("--assert-timeout-ms", type=int, dest="assert_timeout_ms")
     exp.add_argument("--run-dir", help="产物目录（agent 模式必填；不给就按时间戳生成）")
+    exp.add_argument("--profile-dir", dest="profile_dir", metavar="浏览器profile目录",
+                     help="登录态 profile 目录（覆盖 UI_AGENT_PROFILE_DIR）；并发时每路要不同")
     exp.add_argument("--json", action="store_true", help="stdout 只输出一份 JSON")
     exp.set_defaults(func=cmd_explore)
 

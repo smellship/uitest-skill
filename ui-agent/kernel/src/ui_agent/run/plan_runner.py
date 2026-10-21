@@ -23,6 +23,7 @@ from ui_agent.llm.supervisor import Supervisor, make_supervisor
 from ui_agent.replay.cache import case_identity
 from ui_agent.replay.session import CacheOutcome, ReplaySession, open_session
 from ui_agent.report.html import build_report
+from ui_agent.run.dirs import make_run_dir
 from ui_agent.run.runner import Runner
 from ui_agent.run.trace import TraceWriter, cache_row, now_at
 from ui_agent.schema.plan import PlanStep, TestPlan
@@ -326,8 +327,7 @@ class PlanRunner:
     # --- 产物 ---
 
     def _make_run_dir(self) -> Path:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        return self.s.runs_dir / f"{self.plan.slug}-{stamp}"
+        return make_run_dir(self.s.runs_dir, self.plan.slug)
 
     def _shot(self, run_dir: Path, name: str) -> None:
         try:

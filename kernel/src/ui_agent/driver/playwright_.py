@@ -49,6 +49,17 @@ def file_ref(path) -> FileRef:
     return FileRef(path=path, mime=MIME_BY_SUFFIX.get(path.suffix.lower(), "application/octet-stream"))
 
 
+# Chromium 的 profile 单实例锁：同目录第二个进程起不来。报错文本随版本变，这里按几处特征串认。
+LOCK_HINTS = ("Target page, context or browser has been closed", "ProcessSingleton",
+              "SingletonLock", "SingletonCookie", "exitCode=21", "profile is already in use")
+
+
+def profile_lock_error(exc: BaseException) -> bool:
+    """这次启动失败是不是「profile 目录被另一个浏览器占用」。"""
+    text = f"{exc.__class__.__name__}: {exc}"
+    return any(hint in text for hint in LOCK_HINTS) or "already in use" in text.lower()
+
+
 def wait_until_stable(sample: Callable[[], dict], clock: Callable[[], float],
                       sleep: Callable[[float], None], stable_s: float, timeout_s: float,
                       interval_s: float = 0.25) -> dict:
@@ -74,6 +85,10 @@ class StaleTarget(RuntimeError):
     """索引不在当次快照中（页面已变）。"""
 
 
+class ProfileLocked(RuntimeError):
+    """profile 目录被另一个浏览器进程占着（Chromium 单实例锁）。"""
+
+
 class Driver:
     def __init__(self, settings: Settings, clock: Callable[[], float] = time.monotonic):
         self.s = settings
@@ -95,15 +110,25 @@ class Driver:
         self.s.profile_dir.mkdir(parents=True, exist_ok=True)
         w, h = self.s.viewport
         self._pw = sync_playwright().start()
-        self.context = self._pw.chromium.launch_persistent_context(
-            user_data_dir=str(self.s.profile_dir),
-            channel="chromium",  # 完整 Chromium：无头也不落到 headless shell，两种模式同一个 exe
-            headless=self.s.headless,
-            slow_mo=0 if self.s.headless else self.s.slow_mo,
-            viewport={"width": w, "height": h},
-            device_scale_factor=1,
-            args=[f"--window-size={w},{h}"],
-        )
+        try:
+            self.context = self._pw.chromium.launch_persistent_context(
+                user_data_dir=str(self.s.profile_dir),
+                channel="chromium",  # 完整 Chromium：无头也不落到 headless shell，两种模式同一个 exe
+                headless=self.s.headless,
+                slow_mo=0 if self.s.headless else self.s.slow_mo,
+                viewport={"width": w, "height": h},
+                device_scale_factor=1,
+                args=[f"--window-size={w},{h}"],
+            )
+        except PlaywrightError as exc:
+            self._pw.stop()
+            self._pw = None
+            if profile_lock_error(exc):
+                raise ProfileLocked(
+                    f"profile 目录已被另一个浏览器占用：{self.s.profile_dir}。"
+                    f"并发跑多个用例时每个进程要给自己的 --profile-dir（或设 UI_AGENT_PROFILE_DIR）"
+                ) from exc
+            raise
         pages = self.context.pages
         self.page = pages[0] if pages else self.context.new_page()
         for extra in pages[1:]:
@@ -115,7 +140,10 @@ class Driver:
 
     def close(self) -> None:
         if self.context is not None:
-            self.context.close()
+            try:
+                self.context.close()
+            except PlaywrightError:
+                pass  # 已经崩掉的 context 只会在 close 时再抛一次，别盖住真正的错
         if self._pw is not None:
             self._pw.stop()
         self.context = None

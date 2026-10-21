@@ -6,9 +6,10 @@
 ```
 ui-agent/        发布的 skill 包 —— 自足，整个目录丢进宿主的 skills 目录即可用
   SKILL.md       宿主 agent 的入口（路由表 + 铁律 + 工作流）
-  references/    11 篇按需读的说明书
+  references/    12 篇按需读的说明书
   scripts/       bootstrap.ps1 / bootstrap.sh（幂等）
                  host_loop.py（宿主循环参考实现）
+                 parallel_run.py（多路并行编排）
                  check_docs.py（文档与内核一致性校验）
   kernel/        内核本体（本包自带一份，独立 .venv）
 kernel/          内核开发树（源码 / 测试 / 冒烟脚本 / spec）
@@ -98,6 +99,24 @@ uv run ui-agent run --plan-file "$PLAN" --url "$URL" --decider off --supervisor 
 
 不想自己写 `wait`/`answer` 循环：`python ui-agent/scripts/host_loop.py --help`，
 它是同一套协议的参考实现（只用标准库，不 import 内核），照抄改 policy 即可。
+
+## 并行：一次跑多个用例
+
+内核支持多进程同时各跑一个用例（一路一个浏览器）。并行的最小前提是
+**每路一个 profile 目录**——Chromium 对同一个 `user-data-dir` 加单实例锁，共用就起不来：
+
+```bash
+uv run ui-agent run --plan-file "$PLAN_A" --url "$URL" --run-dir "$OUT/a" \
+  --profile-dir "$PROF/a" --decider agent --supervisor off
+uv run ui-agent run --plan-file "$PLAN_B" --url "$URL" --run-dir "$OUT/b" \
+  --profile-dir "$PROF/b" --decider agent --supervisor off
+```
+
+`--run-dir` 也必须每路不同（桥目录跟着它走，撞了就会答错 lane）。
+编排放 `ui-agent/scripts/parallel_run.py`（写一份 `jobs.json` 一次拉起 N 路），
+宿主也可以**创建子 agent 并行**——并发上限跟随宿主自己的设置，每路一个子 agent、一个用例。
+
+细节见 `ui-agent/references/parallel.md`。
 
 ## skill 四段工作流
 

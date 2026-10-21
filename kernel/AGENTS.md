@@ -121,7 +121,7 @@ skill 只教怎么写、怎么跑、产物放哪。包里唯一相关的是一�
 
 ```
 ui-agent/
-  SKILL.md                        frontmatter(name+description) + 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 文件桥 vs MCP
+  SKILL.md                        frontmatter(name+description) + 路由表 + 十二条铁律 + 四档开关 + 六步工作流 + 并行 + 命令面 + 文件桥 vs MCP
   references/
     setup.md                      bootstrap 脚本 / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误
     cases-repo.md                 用例库怎么建：向用户要哪三件事 / 目录约定 / outputs 时间戳 / 录像归属
@@ -134,9 +134,11 @@ ui-agent/
     debugging.md                  trace 词表 / cache 词表 / 11 个停机状态 / 失配判定 / 浏览器开销旋钮
     envs.md                       全部环境变量 ↔ CLI 开关对照、默认值、常用组合
     security.md                   secret 与非 secret 两条路 / 落盘边界 / 探索产物为什么只写来源
+    parallel.md                   多开：profile 隔离 / run-dir 隔离 / parallel_run.py / 子 agent 分工与上限
   scripts/
     bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 kernel/.browsers + 验 --help
     host_loop.py                  宿主循环参考实现：起内核 → 读 ask → 作答 → 读终态（标准库，不 import 内核）
+    parallel_run.py               多路并行编排：分配 profile/产物目录、并发起 N 个 host_loop、按 status 汇总
     check_docs.py                 文档与内核一致性校验：词表 / 默认值 / 开关 / 断链 / 包内不许有用例
   kernel/                         ← build_skill.py 生成：内核最小可运行集（src / examples / pyproject / uv.lock /
                                      scripts/env.ps1 / scripts/smoke_browser.py），不含 tests 与运行产物
@@ -178,6 +180,26 @@ $t = [System.IO.File]::ReadAllText($p, [System.Text.UTF8Encoding]::new($false))
 
 `bootstrap` 的 `-CheckOnly` / `--check` 必须**不装任何东西**：早期版本在这一支里用 `uv run` 查 python 版本，
 结果顺手创建了 `.venv`。现在先 sync 再读 `.venv` 里的 python，`--check` 全程零写入。
+
+## 多开 / 并发（2026-10-21）
+
+内核支持**多个进程同时各跑一个用例**（一路一个浏览器）。三件事必须每路独立：
+
+- **profile**：`Driver.start()` 用 `launch_persistent_context(user_data_dir=...)` 保登录态，Chromium 对同一
+  `user-data-dir` 加**单实例锁**——第二个进程直接被拒。所以 `--profile-dir`（或 `UI_AGENT_PROFILE_DIR`）
+  必须每路不同。撞锁时 Chromium 原生的报错是一句极具误导性的 `Target page, context or browser has been closed`，
+  `driver/playwright_.py` 把它翻成 `ProfileLocked`（`RuntimeError` 子类）：
+  「profile 目录已被另一个浏览器占用：…；并发跑多个用例时每个进程要给自己的 --profile-dir（或设 UI_AGENT_PROFILE_DIR）」。
+  **不许把这条翻译去掉**——没有它，用户只会看到 "been closed" 然后去查网络。
+- **run-dir**：`run/dirs.py` 的 `make_run_dir()` 在默认目录名后追加 `-{pid}`，同一秒并发起同名任务不再互相覆盖。
+  显式 `--run-dir` 仍然优先（并行时应该显式给）。
+- **桥**：桥目录默认跟着 `<run-dir>/bridge` 走，所以 run-dir 不撞桥就不撞。
+  **`UI_AGENT_BRIDGE_DIR` 在并行时不许设**——它会让所有路共用一个桥，宿主会答错 lane。
+
+录像（cache）本身是并发安全的：`save()` 用 `tmp` + `os.replace` 原子替换，同键后写覆盖。
+但**同一个用例并行录制没有意义**（两路录同一段动作，纯浪费 token）。
+
+skill 侧的并行编排在 `../ui-agent/scripts/parallel_run.py`，文档在 `references/parallel.md`。
 
 ## 待办（明确未做，不要误以为已支持）
 

@@ -199,7 +199,7 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 
 ```
 ui-agent/
-  SKILL.md       references/（11 篇）      scripts/{bootstrap.{ps1,sh},host_loop.py,check_docs.py}
+  SKILL.md       references/（12 篇）      scripts/{bootstrap.{ps1,sh},host_loop.py,parallel_run.py,check_docs.py}
   kernel/                  ← build_skill.py 生成的内核副本（src / examples / pyproject / uv.lock / …
                                不含 tests、.venv、.artifacts、.browsers）
 ```
@@ -225,11 +225,11 @@ uv run python scripts/build_skill.py            # 同步（先删 ui-agent/kerne
 uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1
 ```
 
-skill 内容（11 篇 reference + 双平台 bootstrap + 两个自检脚本）：
+skill 内容（12 篇 reference + 双平台 bootstrap + 三个自检/编排脚本）：
 
 | 文件 | 讲什么 |
 |---|---|
-| `SKILL.md` | 路由表 + 十条铁律 + 四档开关 + 六步工作流 + 命令面 + 退出码 + 文件桥 vs MCP |
+| `SKILL.md` | 路由表 + 十二条铁律 + 四档开关 + 六步工作流 + 并行 + 命令面 + 退出码 + 文件桥 vs MCP |
 | `references/setup.md` | bootstrap / 浏览器目录 / 密钥 / 有头无头 / 常见环境错误 |
 | `references/cases-repo.md` | 用例库怎么建：给用户要哪三件事、目录约定、outputs 时间戳、录像归属 |
 | `references/cases.md` | 用例 YAML 写法、8 种断言、5 种算「业务结果证据」、编译错误码全集 |
@@ -241,7 +241,9 @@ skill 内容（11 篇 reference + 双平台 bootstrap + 两个自检脚本）：
 | `references/debugging.md` | trace 词表、cache 词表、11 个停机状态、失配判定、开销旋钮 |
 | `references/envs.md` | 全部环境变量与 CLI 开关的对应关系、默认值、常用组合 |
 | `references/security.md` | secret 与非 secret 两条路、落盘边界、探索产物为什么只写来源 |
+| `references/parallel.md` | 多开：profile 隔离、run-dir 隔离、`parallel_run.py`、子 agent 分工与上限 |
 | `scripts/host_loop.py` | 宿主循环参考实现（标准库、不 import 内核、按 st_mtime 判 ask） |
+| `scripts/parallel_run.py` | 多路并行编排（起 N 个 host_loop、分配 profile/产物目录、按 status 汇总） |
 | `scripts/check_docs.py` | 文档与内核一致性校验（词表 / 默认值 / 开关 / 断链 / 包内不许有用例） |
 
 **planner 缝没有桥**：桥只覆盖 supervise / decide / text 三个缝；planner 由 agent 手写 YAML 替代

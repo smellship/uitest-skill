@@ -319,6 +319,9 @@ def build_command(args, kernel: Path) -> list[str]:
         cmd += ["--mode", args.mode]
     if args.bridge_timeout is not None:
         cmd += ["--bridge-timeout", str(args.bridge_timeout)]
+    if args.profile_dir:
+        # 并发时每路一个 profile：同一个目录会被 Chromium 单实例锁挡住
+        cmd += ["--profile-dir", str(Path(args.profile_dir).resolve())]
     cmd += list(args.extra)
     if not in_venv:
         cmd[1:1] = ["-X", "utf8"]
@@ -514,6 +517,8 @@ def main(argv: list[str] | None = None) -> int:
         description="宿主循环参考实现：起 run → bridge wait → 作答 → answer（--decider agent 必备）",
     )
     parser.add_argument("--run-dir", required=True, help="产物目录（内核必须显式知道桥在哪）")
+    parser.add_argument("--profile-dir", dest="profile_dir",
+                        help="浏览器 profile 目录；并发跑多路时每路必须给不同的（否则 Chromium 单实例锁会挡住）")
     parser.add_argument("--kernel", help="内核目录，默认 <本包>/kernel")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--plan-file", help="plan.json 路径")

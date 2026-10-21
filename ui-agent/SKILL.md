@@ -10,9 +10,10 @@ description: 用自然语言驱动真实 Chromium 跑 Web UI 测试，并把跑�
 ```
 ui-agent/
   SKILL.md          ← 你正在读
-  references/       11 篇，按下面的路由表挑
+  references/       12 篇，按下面的路由表挑
   scripts/          bootstrap.ps1 / bootstrap.sh（装依赖）
                     host_loop.py（宿主循环参考实现）
+                    parallel_run.py（多路并行编排）
                     check_docs.py（文档与内核一致性校验）
   kernel/           内核本体（自己的一份，独立虚拟环境）
 ```
@@ -51,6 +52,7 @@ ui-agent/
 | 跑挂了：`stuck` / `check_failed` / `cache_missed` / 回放对不上 | [references/debugging.md](references/debugging.md) |
 | 要调默认值，或者不知道哪个环境变量管这件事 | [references/envs.md](references/envs.md) |
 | 要处理密码、`--var`、产物落盘、能不能贴日志 | [references/security.md](references/security.md) |
+| 要同时跑好几个用例，或者想开子 agent 并行 | [references/parallel.md](references/parallel.md) |
 
 环境没装好就别往下读——一条命令先自检：
 
@@ -82,6 +84,29 @@ ui-agent/
 10. **停下来了就是停下来了。** `blocked` / `stuck` / `cache_missed` / `aborted` 不是「再试一次就好」——
     读 `result.json` 的 `detail`，判断是改用例、改参数，还是这页面真做不到。
 11. **产物写进用例库的 `outputs/`，不写进本包。** 每次运行显式 `--run-dir`；`outputs/` 默认不进版本库。
+12. **并行时每路一个浏览器、一个 profile、一个产物目录。** 共用 profile 会让后起的那路起不来
+    （Chromium 单实例锁）；共用 `--run-dir` 会让两路的产物互相覆盖。详见 [parallel.md](references/parallel.md)。
+
+## 并行：一次跑多个用例
+
+单进程一次只跑一个用例。用例之间没有依赖时，并行能成倍缩短反馈时间——但要守两条：
+
+- **每路一个 `--profile-dir`**：Chromium 对 `user-data-dir` 加单实例锁，共用目录时后起的进程直接失败。
+- **每路一个 `--run-dir`**：桥目录跟着 `--run-dir` 走，不撞路径就不会答错 lane。
+
+两种并行方式：
+
+| 方式 | 适合 | 怎么做 |
+|---|---|---|
+| `scripts/parallel_run.py` | 策略已确定、能机械作答（比如回放或离线夹具） | 写一份 `jobs.json`，`--max-parallel N` 一次拉起 |
+| **子 agent** | 需要你（模型）逐步决策 | 每个子 agent 跑一个用例，各自维护自己的 `bridge wait` 循环 |
+
+**你可以创建子 agent 并行工作。** 并发数上限**跟随宿主给的上限**：宿主允许几个就最多开几个，
+不要超；宿主没开这个能力就老实串行。每个子 agent 的指令里必须明确给出它自己的
+`--run-dir` 与 `--profile-dir`（具体绝对路径），并要求它只回 `status`、断言结果、产物目录
+——**别把 trace 全文回传**，三路 trace 会把主上下文撑爆。
+
+细节与症状对照见 [references/parallel.md](references/parallel.md)。
 
 ## 四档开关：先定这次谁花钱
 
@@ -156,7 +181,7 @@ MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
 ```bash
 # 都在 kernel/ 目录下执行
 uv run ui-agent --help                                                    # 子命令齐全
-uv run python scripts/smoke_browser.py                                    # ⚠ 在包根目录跑，不是 kernel/
+uv run python scripts/smoke_browser.py                                    # 浏览器起得来、DOM 读得到
 uv run ui-agent snapshot --url "$FIXTURE" --json                          # → element_count: 18
 ```
 
@@ -250,6 +275,7 @@ uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
 |---|---|---|
 | `--goal-file` | `run` / `explore` | 目标太长就写进文件；与 `--goal` 互斥 |
 | `--task` | `run` | run 目录名的前缀（默认 `task`）。想看产物目录名叫得有意义就设它 |
+| `--profile-dir` | `run` / `explore` / `snapshot` | 登录态 profile 目录。**并发时每路必须不同**，否则后起的进程被 Chromium 单实例锁挡住 |
 | `--note` | `bridge answer` | 给这条答复留一句备注，写进 `ans-*.json`，事后审计用 |
 
 `run` 的三个入口互斥：`--goal` / `--goal-file` / `--plan-file`，必须给一个。

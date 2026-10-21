@@ -139,7 +139,7 @@ ui-agent/
     bootstrap.ps1 / bootstrap.sh  幂等自检：uv sync + chromium 装进 kernel/.browsers + 验 --help
     host_loop.py                  宿主循环参考实现：起内核 → 读 ask → 作答 → 读终态（标准库，不 import 内核）
     parallel_run.py               多路并行编排：分配 profile/产物目录、并发起 N 个 host_loop、按 status 汇总
-    check_docs.py                 文档与内核一致性校验：词表 / 默认值 / 开关 / 断链 / 包内不许有用例
+    check_docs.py                 文档与内核一致性校验：词表 / 默认值 / 开关 / 断链 / 包内不许有用例与运行产物
   kernel/                         ← build_skill.py 生成：内核最小可运行集（src / examples / pyproject / uv.lock /
                                      scripts/env.ps1 / scripts/smoke_browser.py），不含 tests 与运行产物
 ```
@@ -191,7 +191,8 @@ $t = [System.IO.File]::ReadAllText($p, [System.Text.UTF8Encoding]::new($false))
   `driver/playwright_.py` 把它翻成 `ProfileLocked`（`RuntimeError` 子类）：
   「profile 目录已被另一个浏览器占用：…；并发跑多个用例时每个进程要给自己的 --profile-dir（或设 UI_AGENT_PROFILE_DIR）」。
   **不许把这条翻译去掉**——没有它，用户只会看到 "been closed" 然后去查网络。
-- **run-dir**：`run/dirs.py` 的 `make_run_dir()` 在默认目录名后追加 `-{pid}`，同一秒并发起同名任务不再互相覆盖。
+- **run-dir**：`run/dirs.py` 的 `make_run_dir()` 用**原子 mkdir 抢位置**（`exist_ok=False`），
+  被占了就依次试 `-2`、`-3`……同一秒并发起同名任务不再互相覆盖。
   显式 `--run-dir` 仍然优先（并行时应该显式给）。
 - **桥**：桥目录默认跟着 `<run-dir>/bridge` 走，所以 run-dir 不撞桥就不撞。
   **`UI_AGENT_BRIDGE_DIR` 在并行时不许设**——它会让所有路共用一个桥，宿主会答错 lane。

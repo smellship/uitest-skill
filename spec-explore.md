@@ -23,7 +23,7 @@
      │          → 产物：trajectory / actions / 截图；**不写回放缓存**
      ▼
 ② 写 YAML      agent 读轨迹，自己写 steps[{goal, checks}]，过 case compile 0 error
-     │          → 产物：cases/<name>.yaml（带稳定 id）
+     │          → 产物：<用例库>/<场景>/<name>.yaml（带稳定 id）
      ▼
 ③ 录制跑       run --plan-file/--case ... ：这一次既录制，又**证明这份 YAML 成立**
      │          → 只有断言通过才落盘（现有闸门，不改）
@@ -107,7 +107,7 @@ v1 **只做单一 goal 的连续循环**（即一个 `Runner.run()`）。
 ```
 
 `explore/` 是**新增目录**，不动 `run --run-dir` 的既有布局，平台契约不受影响。
-`--case-out` 可直接把骨架写到指定路径（如 `cases/<name>.yaml`）。
+骨架要落到用例库里再补 `checks`：`<用例库>/<场景>/<name>.yaml`。
 
 ---
 

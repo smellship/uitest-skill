@@ -242,6 +242,31 @@ def check_outputs(rep: Report) -> None:
         else:
             rep.ok(f"{doc} 提了 --run-dir")
 
+    # .gitignore 模板：outputs 与 .profiles 必须挡，录像必须留。
+    # 录像一旦被挡，换台机器就得重录一遍，「克隆下来零 token 复跑」这条承诺就断了。
+    block = _gitignore_block(repo)
+    if block is None:
+        rep.fail("cases-repo.md 没给 .gitignore 模板")
+        return
+    for must in ("**/outputs/", ".profiles/"):
+        if must in block:
+            rep.ok(f".gitignore 模板挡了 {must}")
+        else:
+            rep.fail(f".gitignore 模板没挡 {must}")
+    if ".cache" in block:
+        rep.fail("cases-repo.md 的 .gitignore 模板挡了 .cache/：录像要入库，否则换机就得重录")
+
+
+def _gitignore_block(text: str) -> str | None:
+    """取出 cases-repo.md 里那段 ```gitignore 围栏。"""
+    marker = "```gitignore"
+    start = text.find(marker)
+    if start < 0:
+        return None
+    start += len(marker)
+    end = text.find("```", start)
+    return text[start:end] if end > 0 else None
+
 
 def check_plan_file(rep: Report) -> None:
     """落 plan 只能靠 --out。
@@ -279,6 +304,41 @@ def check_plan_file(rep: Report) -> None:
         rep.ok("cli.py 仍有 --out 落盘实现")
 
 
+def check_no_runtime(rep: Report) -> None:
+    """包里不许混进运行产物。
+
+    运行产物（录像、report.html、trace.jsonl、snapshot、截图、plans/）是**某一次运行**的结果：
+    既不该进版本库，也不该随 skill 发出去——它们会过时、会让包体积膨胀，还会让人以为那是权威结果。
+    曾经 `kernel/plans/baiwang.json` 就这样被当示例提交过。
+    """
+    print("包装：skill 包里有没有混进运行产物")
+    banned_suffix = {".json", ".jsonl", ".log", ".png", ".jpg", ".jpeg", ".webp", ".zip", ".db", ".sqlite"}
+    banned_dirs = {"outputs", "snapshots", "screenshots", "bridge", ".cache", ".profiles", "runs", "plans"}
+    owners = ("src", "scripts", "examples", "tests")
+    # 本机安装/运行目录：bootstrap 装进来的，不属于「随包发布的内容」
+    local = {".venv", ".browsers", ".artifacts", "runs", ".pytest_cache", ".ruff_cache", "__pycache__"}
+    strays: list[str] = []
+    for path in SKILL_ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(SKILL_ROOT)
+        if any(part in local for part in rel.parts):
+            continue
+        # kernel/src 是源码，那里可以有叫 bridge/ 的包；产物目录只在源码树之外算
+        in_source = rel.parts[:3] == ("kernel", "src", "ui_agent")
+        if not in_source and any(part in banned_dirs for part in rel.parts):
+            strays.append(str(rel))
+            continue
+        if rel.parts[0] not in ("kernel", "scripts", "references") and rel.name != "SKILL.md":
+            continue
+        if path.suffix.lower() in banned_suffix and rel.parts[:2] != ("kernel",) + owners:
+            strays.append(str(rel))
+    if strays:
+        rep.fail(f"skill 包里混进了运行产物：{'、'.join(strays[:5])}")
+    else:
+        rep.ok("skill 包里没有运行产物")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_docs", description="校验 skill 文档与内核源码一致")
     ap.add_argument("-v", "--verbose", action="store_true", help="列出每一条通过项")
@@ -295,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
     check_paths(rep)
     check_outputs(rep)
     check_plan_file(rep)
+    check_no_runtime(rep)
 
     print()
     if rep.bad:

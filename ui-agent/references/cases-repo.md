@@ -84,17 +84,18 @@ uv run ui-agent explore --url <入口> --goal "<一句话目标>" \
 ```gitignore
 # 运行产物：可随时重跑，不进库
 **/outputs/
-# 录像：体积大、和本机浏览器版本相关
-.cache/
 # 浏览器登录态 profile：一团 user-data-dir，几十上百 MB，且和本机绑定
 .profiles/
 # 临时
 *.log
 ```
 
-第三条是并行用的：`--profile-dir` 指到哪里，那个目录就是一团 Chromium 用户数据（cookie、缓存、
-LocalStorage）。**它必须进 `.gitignore`**——既大又与这台机器绑定，提交上去既撑爆仓库，换台机器也没法用。
-建议统一放在 `<用例库>/.profiles/<用例或 lane 名>/`，一并挡掉。
+**注意 `.cache/`（录像）不在这个列表里**：录像必须入库，不然换台机器就要重录一遍（见下一节）。
+它很小——一个用例全套录像通常几 KB 到几十 KB，比一张失败截图还小。
+
+第二条是并行用的：`--profile-dir` 指到哪里，那个目录就是一团 Chromium 用户数据（cookie、缓存、
+LocalStorage）。**它必须挡掉**——几十上百 MB，且与这台机器绑定，提交上去既撑仓库，换台机器也没法用。
+建议统一放在 `<用例库>/.profiles/<用例或 lane 名>/`。
 
 想让某次报告留档就 `git add -f <场景>/outputs/<用例>/<时间戳>/report.html`——但**默认别把 outputs 提交**：
 里面有截图（几百 KB 起）、有页面快照（可能含用户数据）。

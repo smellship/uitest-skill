@@ -296,7 +296,9 @@ uv run ui-agent run --plan-file plans\baiwang.json --url <网址> --mode debug
 uv run ui-agent report --run-dir .artifacts\runs\<某次运行>
 ```
 
-版本库里的计划文件**不写入口地址**（免把生产域名带进公开仓库），运行时用 `--url` 给；
+`plans\` 是**生成物**，已在 `.gitignore` 里：它由 `plan` 当场产出，属于运行数据，不该进版本库
+（正式用例请写成用例库里的 YAML，见上节）。
+计划文件**不写入口地址**（免把生产域名带进公开仓库），运行时用 `--url` 给；
 忘了给会直接报「计划里没有 url，请用 --url 指定入口」，不会拿空地址去跑。
 
 `--var 键=值` 可以给 `TYPE_TEXT` 字段直接供值（优先于文本模型，值不落盘、不进模型），

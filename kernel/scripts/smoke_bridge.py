@@ -312,7 +312,12 @@ def main() -> int:
                   json.dumps({k: start.get(k) for k in ("decider", "supervisor_mode")},
                              ensure_ascii=False))
             asks = sorted((run1 / "bridge").glob("ask-*.json"))
-            check("[1] 桥留了 ask 审计文件", len(asks) == 2, str(len(asks)))
+            # 步内预检生效后，CLICK 一旦让断言成立就不再有第二个 decide（以前固定 2 条：
+            # CLICK + DONE），所以这里不卡条数，只验桥留下了可审计的连续往返记录。
+            check("[1] 桥留了 ask 审计文件",
+                  bool(asks) and [p.name for p in asks] ==
+                  [f"ask-{i:04d}.json" for i in range(1, len(asks) + 1)],
+                  f"{len(asks)} 条：{[p.name for p in asks]}")
 
             # ---------- [2] 监督往返 ----------
             print("\n[2] 人为阻断 → 监督往返（RECOVER 真的被执行）")

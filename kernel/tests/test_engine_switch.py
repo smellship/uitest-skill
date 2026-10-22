@@ -319,7 +319,8 @@ class TestRunnerUsesTheFactory:
         fake_chat, _ = fake_delegate_reply([("CLICK", "1"), ("DONE", None)])
         monkeypatch.setattr(delegate_mod, "chat_json", fake_chat)
         settings = settings_for(tmp_path, ui_agent_decider="llm", text_model_api_key="k")
-        driver = FakeDriver([snapshot("a"), snapshot("b", text="查询完成"), snapshot("b", text="查询完成")])
+        driver = FakeDriver([snapshot("a"), snapshot("b"), snapshot("b", text="查询完成"),
+                             snapshot("b", text="查询完成")])
         runner = Runner(settings, "查询", "http://x/", checks=[parse_check("text_contains=查询完成")],
                         task="t", driver=driver, verbose=False)  # 不传 engine ⇒ 走工厂
         result = runner.run()

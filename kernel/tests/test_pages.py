@@ -135,7 +135,9 @@ class TestPages:
 
 def run_with_facts(tmp_path, notes=(), dialogs=(), checks=("text_contains=查询完成",)):
     settings = settings_for(tmp_path)
-    driver = FakeDriver([snapshot("a"), snapshot("b", text="查询完成")])
+    # 第二张快照故意不满足断言：这里考的是"动作把它带出的事实怎么落盘"，
+    # 若 CLICK 后断言就成立，步内预检会抢在第二次决策前面收尾。
+    driver = FakeDriver([snapshot("a"), snapshot("b"), snapshot("c", text="查询完成")])
     driver.s = settings
     driver.notes = list(notes)
     driver.dialogs = list(dialogs)

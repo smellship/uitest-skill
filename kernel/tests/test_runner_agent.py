@@ -80,8 +80,10 @@ def run_agent(tmp_path, snapshots, agent: ScriptedAgent, checks=CHECKS, **overri
 class TestAgentDecisionLoop:
     def test_full_chain_ok_with_agent_decisions(self, tmp_path):
         agent = ScriptedAgent([("CLICK", "1"), ("DONE", None)])
-        result = run_agent(tmp_path, [snapshot("a"), snapshot("b", text="查询完成"),
-                                      snapshot("b", text="查询完成")], agent)
+        # 第二张快照故意不满足断言：这里考的是 agent 决策行的接线，
+        # 若 CLICK 后断言就成立，步内预检会抢在 DONE 前面收尾。
+        result = run_agent(tmp_path, [snapshot("a"), snapshot("b"),
+                                      snapshot("c", text="查询完成")], agent)
 
         assert result.status == "ok"
         trace = read_trace(result.run_dir)

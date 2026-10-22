@@ -214,8 +214,11 @@ def test_miss_in_model_mode_relays_and_backfills(tmp_path):
     # 页面改版：按钮标签换了——回放对不上，交还模型；模型跑完后整步重录（自愈回填）
     engine = FakeEngine([Decision(operation="CLICK", target="1", target_element=1, confidence=0.9),
                          done()])
+    # 第二张快照故意不满足断言：满足了的话步内预检会在 CLICK 后直接收尾，
+    # 这条测的是「失配后余下决策全交模型」。
     result, session, outcome = run_goal(
-        tmp_path, [snapshot("a", labels=["新按钮"]), snapshot("b", text="查询完成", labels=["新按钮"])],
+        tmp_path, [snapshot("a", labels=["新按钮"]), snapshot("b", labels=["新按钮"]),
+                   snapshot("c", text="查询完成", labels=["新按钮"])],
         [], checks=CHECKS, engine=engine, ui_agent_decider="llm")
 
     assert result.status == "ok"
@@ -338,7 +341,7 @@ def test_mid_step_miss_hands_over_and_rerecords(tmp_path):
                          done()])
     result, session, outcome = run_goal(
         tmp_path, [snapshot("a", labels=["一"]), snapshot("b", labels=["三"]),
-                   snapshot("c", text="查询完成", labels=["三"])],
+                   snapshot("c", labels=["三"]), snapshot("d", text="查询完成", labels=["三"])],
         [], checks=CHECKS, engine=engine, ui_agent_decider="llm")
 
     assert result.status == "ok"

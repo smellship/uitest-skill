@@ -215,17 +215,15 @@ class Runner:
         # 回放时不做（录像里本来就有收尾那条 DONE，抢跑会把录像截短）。
         last_decision: Decision | None = None
         prior_state: State | None = None
-        last_target: int | None = None
 
         def after(esc: Escalation) -> None:
-            nonlocal step, actions, prev_fp, last_decision, last_target
+            nonlocal step, actions, prev_fp, last_decision
             step += esc.cycles
             if esc.acted:
                 actions += 1
                 prev_fp = fp
                 # 监督替模型做了动作：它照样改变页面，预检要认它
                 last_decision = esc.action
-                last_target = esc.action.target_element if esc.action else None
 
         while True:
             raw = self.driver.snapshot()
@@ -245,23 +243,25 @@ class Runner:
                                 self.s.max_elements, self.s.max_text)
             self._dump_state(run_dir, step, state)
 
-            # 断言已经成立、而且模型刚操作过的那个控件被新出现的东西盖住了 —— 这就是
-            # "结果已经弹出来了，模型还在往弹窗下面点"的现场，直接收尾，不再向模型要决策。
+            # 上一个动作刚让断言全部成立 —— 这一步的活干完了，直接收尾，不再向模型要决策。
             # 条件都必要，缺一不可：
-            #   checks        没有断言就没有"达成"可言
+            #   actions        还没动过手时不许抢跑（页面一打开就满足的断言走 DONE 语义）
+            #   checks         没有断言就没有"达成"可言
             #   非 CACHE_SOURCE  回放不预检（录像自带收尾那条，抢跑会把录像截短）
             #   非 DONE/BLOCKED 这两类自己已经评过断言，再评一次是重复
-            #   prior_state   动作之前断言还不成立：本来就成立的断言（比如"发票号码还在"）
-            #                 不能算这个动作的功劳
-            #   last_target   上一个动作确实点了某个元素
-            #   occluded_by   而且它现在被盖住了 —— 页面顶部多了东西，通常就是结果浮层
+            #   prior_state    动作之前断言还不成立：本来就成立的断言（比如"发票号码还在"）
+            #                  不能算这个动作的功劳，否则开局第一帧就收尾了
+            #
+            # 这里**不要求**结果以浮层形式盖住目标元素：结果既可能是弹窗，也可能是页面
+            # 下方新长出来的一块面板（合规查验就是这样）。曾经把"目标被遮挡"当成判据，
+            # 结果页内面板永远命中不了，Jev 把「查验」重复点了 11 次才靠预算收尾。
+            # "动作前不成立、动作后成立"本身就足以证明这个动作有效。
             if (actions and self.checks
                     and last_decision is not None
                     and last_decision.model != CACHE_SOURCE
                     and last_decision.operation not in ("DONE", "BLOCKED")
                     and prior_state is not None
-                    and not self._satisfied(prior_state)
-                    and self._target_now_occluded(state, last_target)):
+                    and not self._satisfied(prior_state)):
                 early = self._precheck(state)
                 if early is not None:
                     # 这一步自己收尾，不向模型再要一个决策。
@@ -462,10 +462,6 @@ class Runner:
             step += 1
             prev_fp = fp
             last_decision = decision
-            # WAIT / PRESS_KEY 这类没有目标的动作不该把"刚点过的那个控件"忘掉：
-            # 点完查验 -> WAIT 等渲染 -> 弹窗盖住查验按钮，最有意义的目标仍是那个按钮。
-            if decision.target_element is not None:
-                last_target = decision.target_element
 
     def _rules(self) -> list[str] | None:
         return [NEXT_ACTION, *self.hints] if self.hints else None
@@ -809,17 +805,6 @@ class Runner:
                                self.s.max_elements, self.s.max_text)
         return run_checks_polling(self.checks, state, fresh,
                                   self.s.ui_agent_assert_timeout_ms, dom=self.driver)
-
-    def _target_now_occluded(self, state: State, index: int | None) -> bool:
-        """上一个动作点的那个元素，现在是不是被别的东西盖住了。
-
-        occluded_by 由快照算出来（谁压住了它）。点了它之后立刻被盖住，说明新出现了一层
-        浮层；再叠加"断言已经成立"，就是"结果已经出来"的确凿迹象。
-        """
-        if index is None:
-            return False
-        hit = next((el for el in state.elements if el.index == index), None)
-        return bool(hit is not None and hit.occluded_by)
 
     def _satisfied(self, state: State) -> bool:
         """这一张快照下断言是否已经全过（预检的"动作之前"对照，不查 DOM 属性）。"""

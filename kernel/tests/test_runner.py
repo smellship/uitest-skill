@@ -173,7 +173,10 @@ def test_ci_mode_keeps_only_the_failure_screenshot(tmp_path):
 def test_trace_sink_gets_aggregated_rows_and_lifecycle_stays_in_file(tmp_path):
     rows: list[dict] = []
     settings = settings_for(tmp_path)
-    driver = FakeDriver([snapshot("a"), snapshot("b", text="查询完成"), snapshot("b", text="查询完成")])
+    # 快照序列故意让预检命中不了：聚合口的考点是"哪些行被搬出去"，
+    # 若 CLICK 后断言就成立，步内预检会抢在 DONE 前面收尾，两条决策就只剩一条。
+    driver = FakeDriver([snapshot("a"), snapshot("b"), snapshot("b", text="查询完成"),
+                         snapshot("b", text="查询完成")])
     driver.s = settings
     runner = Runner(settings, "目标", "http://x/", checks=[parse_check("text_contains=查询完成")],
                     task="t", driver=driver, engine=FakeEngine([click(), done()]), verbose=False,
@@ -305,3 +308,25 @@ def test_precheck_skips_partially_satisfied_checks(tmp_path):
 
     assert len(engine.seen_states) >= 2      # CLICK 后没命中，回到模型要 DONE
     assert result.status == "check_failed"
+
+
+def test_precheck_fires_when_the_result_is_an_inline_panel(tmp_path):
+    """结果���在页面下方的一块面板里（没有弹窗、什么都没被遮挡）也要能收尾。
+
+    合规查验就是这样：点「查验」后结果长在表单下面，既不弹窗也不盖住按钮，
+    所以 occluded_by 一直是空的。曾经把"目标被遮挡"当成预检判据，这类页面
+    永远命中不了，Jev 把「查验」重复点了 11 次才靠预算收尾。
+    """
+    before = snapshot("a", text="合规查验")
+    after = snapshot("b", text="合规查验 合规结果 非税局黑名单销方 国税局查验通过")
+    assert not after["elements"][0].get("occluded_by")  # 确认：什么都没被盖住
+    runner, _, engine = make_runner(
+        tmp_path,
+        [before, after, after],
+        [click(), click()],
+        checks=["text_contains=合规结果", "text_contains=国税局查验通过"],
+    )
+    result = runner.run()
+
+    assert result.status == "ok" and "动作中途断言已成立" in result.detail
+    assert len(engine.seen_states) == 1, "第二次 CLICK（重复点查验）根本不该发生"

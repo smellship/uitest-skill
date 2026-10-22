@@ -234,7 +234,10 @@ class TestHintInTheLoop:
         sup = ScriptedSupervisor([{"ruling": "HINT", "hint": "别再点查询，先选行政区域"}])
         runner, _, engine = make_runner(
             tmp_path,
-            [snapshot("a"), snapshot("a"), snapshot("a"), snapshot("a"), snapshot("a", text="好了")],
+            # 最后一张才满足断言：满足得太早的话，步内预检会在第五次决策前就收尾，
+            # 这里要考的是「hint 作为规则回填给下一次决策」。
+            [snapshot("a"), snapshot("a"), snapshot("a"), snapshot("a"), snapshot("a"),
+             snapshot("a", text="好了")],
             [click(), click(), click(), click(), done()],
             sup, checks=["text_contains=好了"],
         )

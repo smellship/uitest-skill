@@ -20,9 +20,13 @@ from ui_agent.driver.ladder import LadderOutcome, run_ladder
 
 JS_DIR = Path(__file__).resolve().parents[1] / "observe" / "js"
 SNAPSHOT_JS = (JS_DIR / "snapshot.js").read_text(encoding="utf-8")
+MARKS_JS = (JS_DIR / "marks.js").read_text(encoding="utf-8")
 GUARD_JS = (JS_DIR / "guard.js").read_text(encoding="utf-8")
 ACT_JS_DIR = Path(__file__).resolve().parents[1] / "act" / "js"
 DROP_FILE_JS = (ACT_JS_DIR / "drop_file.js").read_text(encoding="utf-8")
+
+# 元素索引标记的属性名：快照写、守卫读、定位器查，只有这三处知道它。
+INDEX_MARK = "data-uiagent-idx"
 
 MIME_BY_SUFFIX = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
                   ".jpeg": "image/jpeg", ".txt": "text/plain"}
@@ -257,15 +261,41 @@ class Driver:
 
     # --- 快照 ---
 
+    def _clear_marks(self) -> None:
+        """扫之前把上一轮的索引标记清干净。
+
+        只清标记不动数据；不清的话，残留标记会让下面「这一帧是不是已扫过」的判断误判。
+        """
+        for frame in self.page.frames:
+            try:
+                frame.evaluate(MARKS_JS, {"op": "clear", "mark": INDEX_MARK})
+            except PlaywrightError:
+                continue  # 帧可能在导航或已销毁
+
+    def _mark_count(self, frame: Frame) -> int:
+        """数这一帧树里还剩多少个索引标记。"""
+        try:
+            return int(frame.evaluate(MARKS_JS, {"op": "count", "mark": INDEX_MARK}))
+        except PlaywrightError:
+            return 0
+
     def snapshot(self) -> dict:
         self._frames.clear()
+        self._clear_marks()
         frames_raw: list[dict] = []
         elements: list[dict] = []
         total = 0
-        for frame in self.page.frames:
+        # 主帧先扫：微前端（wujie 把子应用挂在主文档的 shadowRoot 里）会让子帧看到同一批节点，
+        # 这些节点的真实渲染层在主帧，所以编号与定位都必须以主帧为准。
+        main = self.page.main_frame
+        for frame in [main, *(f for f in self.page.frames if f != main)]:
             budget = max(0, self.s.max_elements - total)
             if budget == 0:
                 break
+            if frame != main and self._mark_count(frame) > 0:
+                # 已经带标记 = 这些节点上一轮扫描时编过号了（同一批节点走了两个 frame）。
+                # 再扫一遍会把主帧的标记覆盖成新号，主帧的索引自此全部定位不到。
+                continue
             try:
                 data = frame.evaluate(
                     SNAPSHOT_JS,
@@ -275,7 +305,7 @@ class Driver:
                 continue  # 帧可能在导航或已销毁
             if not data:
                 continue
-            is_main = frame == self.page.main_frame
+            is_main = frame == main
             for item in data["elements"]:
                 item["frame"] = "" if is_main else frame.url
                 self._frames[item["index"]] = frame
@@ -308,7 +338,7 @@ class Driver:
         return frame
 
     def locator(self, index: int):
-        return self.frame_of(index).locator(f'[data-uiagent-idx="{index}"]')
+        return self.frame_of(index).locator(f'[{INDEX_MARK}="{index}"]')
 
     def guard(self, index: int) -> dict:
         return self.frame_of(index).evaluate(GUARD_JS, {"index": index})

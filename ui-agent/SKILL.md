@@ -10,7 +10,7 @@ description: 用自然语言驱动真实 Chromium 跑 Web UI 测试，并把跑�
 ```
 ui-agent/
   SKILL.md          ← 你正在读
-  references/       12 篇，按下面的路由表挑
+  references/       13 篇，按下面的路由表挑
   scripts/          bootstrap.ps1 / bootstrap.sh（装依赖）
                     host_loop.py（宿主循环参考实现）
                     ask.py（压缩查看并作答一条桥问答）
@@ -55,6 +55,7 @@ ui-agent/
 | 要调默认值，或者不知道哪个环境变量管这件事 | [references/envs.md](references/envs.md) |
 | 要处理密码、`--var`、产物落盘、能不能贴日志 | [references/security.md](references/security.md) |
 | 要同时跑好几个用例，或者想开子 agent 并行 | [references/parallel.md](references/parallel.md) |
+| 手上是别人的 Playwright / ai* 脚本，要翻成 YAML | [references/porting.md](references/porting.md) |
 
 环境没装好就别往下读——一条命令先自检：
 
@@ -88,6 +89,9 @@ ui-agent/
 11. **产物写进用例库的 `outputs/`，不写进本包。** 每次运行显式 `--run-dir`；`outputs/` 默认不进版本库。
 12. **并行时每路一个浏览器、一个 profile、一个产物目录。** 共用 profile 会让后起的那路起不来
     （Chromium 单实例锁）；共用 `--run-dir` 会让两路的产物互相覆盖。详见 [parallel.md](references/parallel.md)。
+13. **任务做完默认清除登录态。** 你用 `--profile-dir` 跑过的那个目录里现在存着真实会话 cookie。
+    收尾时删掉它（默认行为，不用问）；用户明确要说「留着下次接着跑」才保留，并在回话里说清保留了哪个目录。
+    见下方「收尾：默认清除登录态」。
 
 ## 并行：一次跑多个用例
 
@@ -172,6 +176,7 @@ MCP 装了之后（`uv sync --extra mcp`，`python -m ui_agent.mcp_server`）：
 ⑤ 汇报          读 result.json + summary.json：status、每步断言、缺陷候选；status=ok 才算过
 ⑥ 存档          录制成功 ⇒ 下次同命令加 --decider off --supervisor off 即可零 token 复跑
                 用例 YAML + plan.json + 录像进库，outputs/ 默认不进
+⑦ 收尾          清除登录态（删 --profile-dir 那个目录）+ 交代留了什么
 ```
 
 第 ② 步的 YAML 是唯一真源；`.plan.json` 是派生物，可随时由 YAML 重建，不手改。
@@ -189,6 +194,34 @@ python scripts/ask.py answer --run-dir "$OUT" --op CLICK --target 36
 
 原始 `ask-*.json` 可以到 300 KB（250 个元素的整页快照），**永远不要直接读它**——
 `ask.py show` 会把它压成几十行摘要，`ask.py answer` 会自己造一份合法答复。
+
+## 收尾：默认清除登录态
+
+跑完就清，不用问。`--profile-dir` 那个目录是**完整的浏览器 user-data-dir**：cookie、localStorage、
+已保存的密码都存里面。留着就是一份没人看的凭据副本。
+
+```powershell
+Remove-Item -Recurse -Force "<那个 profile 目录>"          # Windows
+```
+```bash
+rm -rf "<那个 profile 目录>"                              # macOS / Linux
+```
+
+三条细则：
+
+- **默认删**。不必先问「要不要删」，直接删了在汇报里说一句就行（否则用户会觉得你在偷东西）。
+- **用户说「留着下次接着跑」才保留**，并回话里点名保留了哪个路径、里面有什么。
+- 共用目录要小心：如果 `--profile-dir` 指向的是用户早就有的目录（比如他们自己登录的 Chrome），
+  **不要删**——只删本工具建的那种（`.profiles/<用例名>`、`kernel/.artifacts/chrome-profile`）。
+
+清完再确认一次真的没在跑（Chrome 持有锁时删不干净）：
+
+```powershell
+Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+同一个用户下次要跑同一个站点，重新登录就行——登录动作本来就应该写在用例第 1 步，
+不该依赖「上次登录的残留」。**依赖残留的用例在别人机器上一定跑不过。**
 
 ## 快速开始
 

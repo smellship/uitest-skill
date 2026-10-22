@@ -180,6 +180,17 @@ def main() -> int:
                                        parse_check("element_exists=高级查询"),
                                        parse_check("url_contains=local_fixture")]):
             check(item.label, item.ok, item.evidence)
+        print("\n[9] 无 for 关联的表单：真名从容器 label[title] 里取")
+        labels = ["发票号码", "金额合计", "开票日期"]
+        form = find(state, labels[0])
+        act(Decision(operation="SCROLL_TO", target_element=form.index, confidence=1.0))
+        state = refresh()
+        got = [el.label for el in state.elements if el.role == "textbox"]
+        check("三个控件都拿到了真名（不是占位符『请输入』）",
+              all(name in got for name in labels), str(got))
+        placeholder_only = [el.label for el in state.elements
+                            if el.role == "textbox" and el.label in ("请输入", "选择日期")]
+        check("没有控件退回占位符兜底", not placeholder_only, str(placeholder_only))
     finally:
         driver.close()
 

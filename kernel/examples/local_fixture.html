@@ -20,6 +20,12 @@
   .dropzone { width: 420px; border: 2px dashed #bbb; border-radius: 6px; padding: 18px;
               text-align: center; color: #666; cursor: pointer; margin: 8px 0; }
   .error { color: #c00; }
+  /* 复刻 b-form/antd 一类框架：label 没有 for，真名写在包裹容器的 label[title] 里 */
+  .fi-field { display: flex; align-items: center; margin: 6px 0; }
+  .fi-label { width: 96px; text-align: right; }
+  .fi-label label { margin: 0; display: inline; }
+  .fi-required { color: #c00; margin-right: 2px; }
+  .fi-input { width: 300px; }
   section { margin-top: 24px; }
 </style>
 </head>
@@ -60,6 +66,22 @@
 
   <div class="spacer"></div>
   <button id="below" type="button">下方按钮</button>
+
+  <section id="form-label">
+    <h3>无 for 关联的表单（真名在容器 label[title] 里）</h3>
+    <div class="fi-field">
+      <div class="fi-label"><span class="fi-required">*</span><label title="发票号码">发票号码</label><span>:</span></div>
+      <div class="fi-content"><input id="lab-invoice-no" class="fi-input" placeholder="请输入"></div>
+    </div>
+    <div class="fi-field">
+      <div class="fi-label"><label title="金额合计">金额合计</label><span>:</span></div>
+      <div class="fi-content"><input id="lab-amount" class="fi-input" placeholder="请输入"></div>
+    </div>
+    <div class="fi-field">
+      <div class="fi-label"><label title="开票日期">开票日期</label><span>:</span></div>
+      <div class="fi-content"><input id="lab-date" class="fi-input" placeholder="选择日期"></div>
+    </div>
+  </section>
 
   <section id="assert-demo">
     <h3>断言演示（计数 / 属性 / 异步）</h3>

@@ -67,6 +67,20 @@
     return null;
   };
 
+  // 表单控件常常没有 for/id 关联（label.labels 为空），真名写在包裹容器的 label[title] 里。
+  // 沿祖先链找最近一层能给出 label[title] 的容器；不依赖具体框架的 class 命名。
+  // 不往上走到 body/html：那样会命中全页第一个 label[title]，把不相关的名字贴上去。
+  const ancestorLabel = e => {
+    for (let p = e.parentElement, i = 0; p && i < 6; i++, p = p.parentElement) {
+      if (p === document.body || p === document.documentElement) break;
+      const lab = p.querySelector('label[title]');
+      if (!lab) continue;
+      const text = (lab.getAttribute('title') || lab.textContent || '').trim();
+      if (text) return text;
+    }
+    return '';
+  };
+
   const nameOf = (e, seen = new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
@@ -87,7 +101,9 @@
       (['button', 'submit', 'reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt') ||
       (e.tagName === 'INPUT' ? '' : [...e.childNodes].map(n => n.nodeType === 3 ? n.textContent :
         n.nodeType === 1 && n.getAttribute('aria-hidden') !== 'true' ? nameOf(n, seen) : '').join(' ').trim()) ||
-      e.getAttribute('title') || e.getAttribute('placeholder') || '';
+      e.getAttribute('title') ||
+      (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) ? ancestorLabel(e) : '') ||
+      e.getAttribute('placeholder') || '';
   };
 
   // 命中测试：先问文档，命中 shadow 宿主就进它的 shadowRoot 继续问，直到最深处。

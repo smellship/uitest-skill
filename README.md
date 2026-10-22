@@ -6,7 +6,7 @@
 ```
 ui-agent/        发布的 skill 包 —— 自足，整个目录丢进宿主的 skills 目录即可用
   SKILL.md       宿主 agent 的入口（路由表 + 铁律 + 工作流）
-  references/    12 篇按需读的说明书
+  references/    13 篇按需读的说明书
   scripts/       bootstrap.ps1 / bootstrap.sh（幂等）
                  host_loop.py（宿主循环参考实现）
                  parallel_run.py（多路并行编排）

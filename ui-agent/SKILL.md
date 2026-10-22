@@ -49,7 +49,7 @@ ui-agent/
 | 起一次 run，然后循环 `bridge wait` → 处置 → `bridge answer` | [references/running.md](references/running.md) |
 | 收到 `kind=supervise` 的 ask，要选 HINT/RECOVER/REPLAN/ABORT | [references/supervising.md](references/supervising.md) |
 | 收到 `kind=decide` 的 ask，要答 operation + target | [references/deciding.md](references/deciding.md) |
-| 还没有用例，要先探索页面 | [references/exploring.md](references/exploring.md) |
+| 还没有用例，要先探索页面 | [references/exploring.md](references/exploring.md)（配套 `scripts/explore_policy.py`） |
 | 控件在 iframe / shadow DOM 里，或被遮挡、开新标签、弹原生对话框 | [references/m3.md](references/m3.md) |
 | 跑挂了：`stuck` / `check_failed` / `cache_missed` / 回放对不上 | [references/debugging.md](references/debugging.md) |
 | 要调默认值，或者不知道哪个环境变量管这件事 | [references/envs.md](references/envs.md) |

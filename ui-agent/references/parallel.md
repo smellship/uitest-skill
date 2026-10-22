@@ -123,6 +123,11 @@ python scripts/parallel_run.py --out /tmp/runs --max-parallel 2 \
 不做：不 import 内核、不解析桥、不替你决策。真正回答 ask 的仍是 `host_loop.py` 里的策略
 （`--policy fixture` 或你自己的 `.py`）。所以**它只适合策略已经确定、能机械作答的场合**。
 
+现成的策略只有两个：`--policy fixture`（只认包内离线夹具那一个页面）和
+`--policy scripts/explore_policy.py`（通用探索策略：找最像「提交/查询/执行」的按钮点一次就收，
+见 [exploring.md](exploring.md)）。真实业务页面基本都得自己写一份——照 `explore_policy.py`
+的接口 `answer(ask, ctx) -> dict` 抄，decide 的返回值记得包一层 `{"answers": {...}}`。
+
 `--decider agent` 需要策略能答；如果这一轮要你（宿主模型）亲自逐步决策，
 那就别用这个脚本，改用下面第 4 节的子 agent 方式——每路一个你。
 

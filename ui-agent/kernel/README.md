@@ -199,7 +199,7 @@ uv run python -m ui_agent.mcp_server     # stdio server，供宿主注册
 
 ```
 ui-agent/
-  SKILL.md       references/（12 篇）
+  SKILL.md       references/（13 篇）
   scripts/       bootstrap.{ps1,sh} / host_loop.py / ask.py / explore_policy.py /
                  parallel_run.py / check_docs.py
   kernel/                  ← build_skill.py 生成的内核副本（src / examples / pyproject / uv.lock / …
@@ -227,7 +227,7 @@ uv run python scripts/build_skill.py            # 同步（先删 ui-agent/kerne
 uv run python scripts/build_skill.py --check    # 只报漂移，退出码 1
 ```
 
-skill 内容（12 篇 reference + 双平台 bootstrap + 四个自检/编排/问答脚本）：
+skill 内容（13 篇 reference + 双平台 bootstrap + 四个自检/编排/问答脚本）：
 
 | 文件 | 讲什么 |
 |---|---|

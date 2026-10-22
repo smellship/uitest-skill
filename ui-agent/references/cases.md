@@ -23,6 +23,17 @@ steps:
 字段全集：`id` / `title`（或 `name`）/ `notes` / `url` / `vars` / `steps[].{goal,checks,url,note}`。
 **没有别的字段**——`priority`、`owner`、`env` 这些平台表头不在这里。
 
+**步骤级 `url` 可写站内路径**：以 `/` 开头时按计划入口（`--url` / 顶层 `url`）的 origin 补全。
+
+```yaml
+- goal: 回到发票查验页
+  url: /bw-main-ui/incomeAlone-ui/income/invoiceCheck     # 换环境只改 --url
+```
+
+这个能力是给「登录后不回跳」的站内应用用的：登录成功后停在工作台，菜单项又不是可点角色，
+只能用显式导航把页面拉回目标页。写死域名的用例换个环境就废了，所以写站内路径。
+解析逻辑在 `run/plan_runner.py` 的 `resolve_step_url()`；`//` 开头（协议相对）与绝对地址原样透传。
+
 ## 五条硬规则
 
 1. **`id` 是缓存身份。** 有 `id` 时缓存键 = `id:<id>`；没有才退回 `plan_case_hash`（对内容哈希，改一个字的 goal 就换键）。

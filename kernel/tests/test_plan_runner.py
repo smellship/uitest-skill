@@ -21,7 +21,7 @@ from ui_agent.decide.jev import to_jev_state
 from ui_agent.driver.ladder import LadderOutcome
 from ui_agent.llm.planner import plan_to_json
 from ui_agent.observe.snapshot import build_state
-from ui_agent.run.plan_runner import PlanRunner
+from ui_agent.run.plan_runner import PlanRunner, resolve_step_url
 from ui_agent.schema.check import CheckSpec
 from ui_agent.schema.plan import PlanStep
 from ui_agent.schema.plan import TestPlan as Plan
@@ -166,6 +166,34 @@ def test_step_url_navigates_between_steps(tmp_path):
     )
     runner.run()
     assert driver.gotos == ["http://x/", "http://x/report"]
+
+
+def test_resolve_step_url_uses_plan_origin_for_site_paths():
+    plan_url = "http://10.100.3.2/bw-main-ui/incomeAlone-ui/income/invoiceCheck"
+    assert resolve_step_url("/income/invoiceCheck", plan_url) == "http://10.100.3.2/income/invoiceCheck"
+    # 绝对地址原样返回
+    assert resolve_step_url("http://y/report", "http://x/a") == "http://y/report"
+    # 协议相对地址不掺和，交给浏览器
+    assert resolve_step_url("//y/report", "http://x/a") == "//y/report"
+    # 没有入口就没有 origin 可借，原样返回（交给 goto 报错，不静默改地址）
+    assert resolve_step_url("/a", "") == "/a"
+
+
+def test_step_url_accepts_site_path_so_cases_do_not_hardcode_host(tmp_path):
+    plan = two_step_plan()
+    plan.url = "http://10.100.3.2/bw-main-ui/incomeAlone-ui/income/invoiceCheck"
+    plan.steps[1].url = "/income/invoiceCheck"
+    runner, driver, _ = make_plan_runner(
+        tmp_path,
+        [snapshot("a"), snapshot("b", text="登录完成"), snapshot("c", text="票据类型：电子发票")],
+        [click(), done(), done()],
+        plan=plan,
+    )
+    runner.run()
+    assert driver.gotos == [
+        "http://10.100.3.2/bw-main-ui/incomeAlone-ui/income/invoiceCheck",
+        "http://10.100.3.2/income/invoiceCheck",
+    ]
 
 
 def test_defects_from_steps_are_prefixed_and_aggregated(tmp_path):

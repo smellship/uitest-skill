@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ui_agent.bridge.client import AgentBridge
 from ui_agent.config import Settings
@@ -31,6 +32,20 @@ from ui_agent.schema.state import RecentAction
 from ui_agent.schema.status import STATUS_LABELS
 
 HISTORY_CARRY = 5
+
+
+def resolve_step_url(step_url: str, plan_url: str) -> str:
+    """步骤级 url 可以只写站内路径（以 / 开头），按计划入口的 origin 补全。
+
+    写死域名的用例换个测试环境就废了；写 /income/invoiceCheck 这种站内路径，
+    换环境只改 --url。
+    """
+    if not step_url.startswith("/") or step_url.startswith("//"):
+        return step_url
+    parts = urlsplit(plan_url or "")
+    if not parts.scheme or not parts.netloc:
+        return step_url
+    return f"{parts.scheme}://{parts.netloc}{step_url}"
 
 
 @dataclass
@@ -238,17 +253,23 @@ class PlanRunner:
         return result
 
     def _nav(self, index: int, step: PlanStep) -> None:
-        url = step.url or (self.plan.url if index == 1 else "")
+        url = self._url_of(index, step)
         if not url:
             return
         self.driver.goto(url)
         self.driver.wait_first_paint()
 
+    def _url_of(self, index: int, step: PlanStep) -> str:
+        """这一步落到哪个地址：步骤级 url 优先（可写站内路径），否则第 1 步用计划入口。"""
+        if step.url:
+            return resolve_step_url(step.url, self.plan.url)
+        return self.plan.url if index == 1 else ""
+
     def _step(self, run_dir: Path, index: int, step: PlanStep, history: list[RecentAction],
               attempt: int = 1,
               trace_sink: Callable[[dict], None] | None = None) -> tuple[StepOutcome, list[RecentAction]]:
         remaining = [s.goal for s in self.plan.steps[index:]]  # 当前步之后的计划，供 REPLAN 参考
-        runner = Runner(self.s, step.goal, step.url or self.plan.url, checks=step.checks,
+        runner = Runner(self.s, step.goal, self._url_of(index, step), checks=step.checks,
                         task=self.plan.slug, driver=self.driver, engine=self.engine,
                         verbose=self.verbose, run_dir=run_dir / "steps" / self._dir_name(index, step, attempt),
                         manage_driver=False, recent=history[-self.history_carry:], vars=self.vars,

@@ -3,6 +3,24 @@
 先读 `result.json`（单目标）或 `summary.json`（计划）的 `status` + `detail`。
 `status` 只有 11 个取值，每个对应一种确定的停法——不要靠猜。
 
+## 排障的顺序：先回放定位，再录制验证
+
+**别一上来就重录**（那是付费动作）。先用免费的手段把问题框小：
+
+```
+① 零 token 回放一次（--decider off --supervisor off）
+   → 挂在哪一步？summary.json 里第一个非 ok 的 step，读 steps/NN-*/trace.jsonl
+② 拿这个结论去录制（--decider jev --relearn）
+   → Jev 判断对了、录下正确录像 ⇒ 是录像过期，用例本身没问题，收工
+   → Jev 也卡住（stuck / blocked / low_confidence）⇒ 监督层来找你，由你兜底
+```
+
+② 里 Jev 表现得比第一次差是正常现象——同样的页面状态它可能选不同的路。
+**判据是「它有没有把这条流程走对并录下来」，不是「它和我预期的动作序列一模一样」。**
+
+你是最后一层：`kind=supervise` 的 ask 到了，按 [supervising.md](supervising.md) 选 HINT/RECOVER/REPLAN/ABORT。
+经验分界——模型**知道该干什么但选错了控件** → HINT；**根本不知道下一步是什么** → RECOVER。
+
 ## 停机状态 → 该做什么
 
 | status | 含义 | 先看 | 处置 |
@@ -15,7 +33,7 @@
 | `budget` | 动作/决策/监督预算耗尽 | `detail` 里写着是哪个预算 | 拆小目标；或调 `--max-actions` |
 | `aborted` | 监督模型判 ABORT，或 agent 自己 abort | `detail` / `reason` | 这页面真做不到，别重试 |
 | `replanned` | 监督给了新步骤序列，本次停在原处 | `result.json` 的 `replan` 数组 | 收下新计划再跑一次 |
-| `cache_missed` | 零模型模式下录像对不上 | `cache` 行的 `miss_reasons` | 页面变了 → `--relearn`；断言变了 → 改 YAML 重跑 |
+| `cache_missed` | 零模型模式下录像对不上 | `cache` 行的 `miss_reasons` | **直接走录制流程 `--relearn` 重录**，再跑一次零 token 回放确认（不要手工修录像） |
 | `skipped` | 前序步骤没过，这步没跑 | 上一层的 `status` | 先修前一步 |
 | `error` | 运行时异常 | `detail`（异常类名 + 消息） | 看是不是环境/参数问题 |
 
@@ -100,13 +118,16 @@
 如果 `snapshots/` 里该步最后一张能看到新页面结构，而断言还在找旧标签：
 改 YAML 的断言 → **不要 `--relearn`**（断言变了录像仍在，`--relearn` 会白花 token）。
 
+注意区分：这条说的是**断言**写错了。如果是**页面本身**变了导致录像失配，按上面「排障的顺序」走录制流程重录。
+两种情况的判据不同——看 `miss_reasons`：空或只有 `retry` 是断言问题；`wrong-context` / `no-variant` / `truncated` 是录像问题。
+
 ## 回放对不上：看 `miss_reasons`
 
 | 值 | 含义 | 处置 |
 |---|---|---|
 | `no-entry` | 这个用例 id / 哈希在缓存里没有录像 | 先录一次 |
-| `no-variant` | 有录像但页码/上下文编号对不上 | 页面步骤数变了 → `--relearn` |
-| `wrong-context` | 录像的起点页面与当前页面不符 | 起点 URL 改了，或登录态不同 |
+| `no-variant` | 有录像但页码/上下文编号对不上 | 页面步骤数变了 → `--relearn` 重录 |
+| `wrong-context` | 录像的起点页面与当前页面不符 | 起点 URL 改了，或登录态不同 → `--relearn` 重录 |
 | `invalid-entry` | 录像文件坏了 | 删掉那条录像重录 |
 | `truncated` | 录像在上次运行中被截断（中途动作失败）| `--relearn` |
 | `retry` | 断言失败但记录被保留（`keep_on_check_failed`）| 断言问题，不是录像问题 |

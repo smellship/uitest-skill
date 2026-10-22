@@ -215,10 +215,19 @@ uv run ui-agent run --plan-file "$PLAN" \
 `mode` 三值：`self-finalized`（断言全过，录像已定稿）、`agent-concluded`（模型说完了）、`missed`（对不上）。
 `write` 六值：`saved` / `kept` / `unconfirmed` / `evicted` / `no-change` / `not-written`。
 
-失配时二选一：
+失配时**直接走录制流程重录**（`--relearn`），不要手工去分析录像哪里不对，也不要让用户自己判断：
 
-- 页面真的变了 → `--relearn` 重录（花 token）。
-- 断言写错/太严 → 改 YAML 再跑，**不要重录**（断言变了录像仍在，见 [cases.md](cases.md)）。
+```bash
+uv run ui-agent run --plan-file "$PLAN" --url "$URL" \
+  --var 账号=demo --var 密码=demo \
+  --relearn --run-dir "$OUT" --json
+```
+
+Jev 的判断对页面小改动是有包容力的（改了文案、挪了位置、多一个元素，它按语义照样点得对），
+硬按录像逐字节比对更容易误报。重录完**顺手再跑一次 `--decider off`**，确认新录像真的能用。
+
+唯一的例外是**断言写错/太严**（不是页面变了）：那就改 YAML 再跑，**不要重录**——
+断言变了录像仍在，见 [cases.md](cases.md)。
 
 `--cache-strict` 让命中失败即硬停；默认行为已是「对不上就停」，一般不用开。
 

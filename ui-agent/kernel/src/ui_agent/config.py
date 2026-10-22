@@ -24,8 +24,9 @@ class Settings(BaseSettings):
 
     typesafe_api_key: str = ""
     typesafe_model: str = "jev-latest"
-    typesafe_base_url: str = "https://api.typesafe.ai/v1/systemone"
-    typesafe_auth_mode: str = "bearer"  # bearer=TypeSafe/ShowAPI 原生；appcode=阿里云云市场
+    # 默认走 dmxapi 中转（Bearer）。换别的中转站或官方端点改这一个值即可。
+    typesafe_base_url: str = "https://www.dmxapi.cn/v1/systemone"
+    typesafe_auth_mode: str = "bearer"  # bearer=中转站/官方原生；appcode=阿里云云市场
 
     text_model_api_key: str = ""
     text_model_base_url: str = "https://api.deepseek.com/v1"
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     ui_agent_conf_min: float = 0.55
     ui_agent_decider: str = "jev"        # 决策层：jev=Jev；llm=大模型代班；agent=宿主对话大模型（桥）；off=关闭
     ui_agent_supervisor: bool = True     # 大模型总闸：关 = 监督缝停用（升级点直接停）+ TYPE_TEXT 只认 --var
-    ui_agent_supervisor_mode: str = "model"  # 监督缝走哪条路：model=HTTP 文本模型；agent=文件桥
+    ui_agent_supervisor_mode: str = "agent"  # 监督缝走哪条路：agent=文件桥（默认，问宿主）；model=HTTP 文本模型
     ui_agent_bridge_dir: str = ""        # Agent 桥目录；空 = <run-dir>/bridge
     ui_agent_bridge_timeout_s: float = 180.0  # 单次 ask 的内核侧 deadline（对话模型答一次通常秒级）
     ui_agent_profile_dir: str | None = None  # 覆盖登录态 profile 目录（平台并发时按「人+路」逐路注入）

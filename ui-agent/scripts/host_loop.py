@@ -550,8 +550,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--url", help="入口地址；单目标必填")
     parser.add_argument("--check", action="append", default=[], help="验收断言（kind=值），可重复")
     parser.add_argument("--var", action="append", default=[], metavar="键=值", help="字段值，可重复")
-    parser.add_argument("--decider", default="agent", choices=["jev", "llm", "agent", "off"])
-    parser.add_argument("--supervisor", default="off", choices=["on", "off", "agent"])
+    parser.add_argument("--decider", default="jev", choices=["jev", "llm", "agent", "off"],
+                        help="决策层（默认 jev）：jev=Jev 决策模型执行已有用例；llm=大模型代班；"
+                             "agent=完全交给宿主；off=只回放录像（零 token）")
+    parser.add_argument("--supervisor", default="agent", choices=["on", "off", "agent"],
+                        help="jev 卡住时的升级缝（默认 agent）：agent=问宿主；on=HTTP 文本模型；"
+                             "off=全部关闭（升级点直接停、字段只认 --var）")
     parser.add_argument("--bridge-timeout", type=float, help="覆盖 UI_AGENT_BRIDGE_TIMEOUT_S")
     parser.add_argument("--relearn", action="store_true", help="忽略已有录像，本次重新录制")
     parser.add_argument("--cache", choices=["on", "off"], help="回放缓存开关（透传内核）")

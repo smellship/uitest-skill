@@ -38,6 +38,10 @@ class Supervisor:
     def available(self) -> bool:
         return bool(self.s.text_model_api_key)
 
+    @property
+    def unavailable_reason(self) -> str:
+        return "缺少 TEXT_MODEL_API_KEY；监督模型不可用"
+
     def new_step(self) -> None:
         self.budget.new_step()
 
@@ -82,12 +86,41 @@ class AgentSupervisor:
         return parse_ruling(data, state), meta
 
 
+class NoBridgeSupervisor:
+    """默认档：监督缝留给宿主，但这次没装桥（没给 --run-dir 或没装配 AgentBridge）。
+
+    不抛异常、也不悄悄退回 HTTP：jev 卡住时由 escalate 按 M0 停机语义收尾，
+    trace 里如实写「没有宿主监督通道」，不把一次运行拖崩。
+    """
+
+    def __init__(self, settings: Settings):
+        self.s = settings
+        self.budget = SupervisorBudget(settings.supervisor_per_step, settings.supervisor_per_run)
+
+    @property
+    def available(self) -> bool:
+        return False
+
+    @property
+    def unavailable_reason(self) -> str:
+        return "没有可用的宿主监督通道（没给 --run-dir 或未装配 Agent 桥）；jev 卡住时按 M0 停机"
+
+    def new_step(self) -> None:
+        self.budget.new_step()
+
+    def ask(self, state: State, goal: str, trigger: str, detail: str,
+            remaining: list[str] | None = None) -> tuple[Ruling, dict]:
+        raise RuntimeError(self.unavailable_reason)
+
+
 def make_supervisor(settings: Settings, bridge: AgentBridge | None = None):
-    """总闸优先：ui_agent_supervisor=False 时一律 None，忽略 mode。"""
+    """总闸优先：ui_agent_supervisor=False 时一律 None，忽略 mode。
+
+    mode 默认 agent（问宿主）：没装配桥时给 NoBridgeSupervisor 而不是抛错——
+    裸 CLI 跑 `ui-agent run` 不该因为没有宿主就起不来。
+    """
     if not settings.ui_agent_supervisor:
         return None
     if settings.ui_agent_supervisor_mode == "agent":
-        if bridge is None:
-            raise RuntimeError("supervisor=agent 需要 Agent 桥，但未装配 bridge。")
-        return AgentSupervisor(settings, bridge)
+        return AgentSupervisor(settings, bridge) if bridge is not None else NoBridgeSupervisor(settings)
     return Supervisor(settings)

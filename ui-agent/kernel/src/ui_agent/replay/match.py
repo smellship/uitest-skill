@@ -104,7 +104,15 @@ def _fail(session: ReplaySession, reason: str) -> tuple[None, str]:
 
 
 def _context_ok(record: CachedDecision, state: State) -> bool:
-    """页面身份守卫：地址按路径比（query 常挂易变串），标题只在两边都有时比。"""
+    """页面身份守卫：地址按路径比（query 常挂易变串），标题只在两边都有时比。
+
+    DONE 豁免：它不指向任何元素，靠的是"这一步的断言已经成立"，而这一点由 runner
+    收到 DONE 后当场重评断言来保证——页面不对就判未通过，不会静默成功。反过来卡地址
+    会误伤最常见的场景：登录后跳到哪个页面是站点自己决定的（录的时候落控制台、回的
+    时候被 redirectUrl 送回业务页），地址一变，整步录像就整段作废。
+    """
+    if record.operation == "DONE":
+        return True
     if normalize_url(record.url, keep_query=False) != normalize_url(state.page.url, keep_query=False):
         return False
     if record.title and state.page.title and record.title != state.page.title:

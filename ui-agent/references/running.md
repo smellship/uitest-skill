@@ -187,6 +187,12 @@ python scripts/ask.py answer --run-dir "$OUT" --error "权限不足，打不开�
 `--json` 时 stdout 只有一行 JSON（`ok/status/status_label/detail/run_dir/report/steps/checks/defect_candidates`）。
 不加 `--json` 是人读的进度日志。
 
+**`detail` 里有一句话值得单独认**：`动作中途断言已成立：全部断言通过`。
+意思是某一步的动作（比如点「查验」）已经让该步断言全过，内核**不再向模型要下一个决策**、
+直接收尾 —— 典型场景是点完按钮弹出结果浮层，模型看不到「这就是结果」，只会继续往浮层下面点。
+它是成功（`status=ok`），只是收尾方式不同：录像里会补一条 `DONE`，`trace.jsonl` 里**没有**
+对应的 decision 行（那不是任何模型的决策），收尾理由由 `assert` 行与 `run_end.detail` 交代。
+
 ## 复跑省 token
 
 ```bash

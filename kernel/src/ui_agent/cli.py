@@ -99,11 +99,20 @@ def apply_overrides(settings: Settings, args) -> Settings:
 
 
 def open_bridge(settings: Settings, run_dir: Path | None, args) -> AgentBridge | None:
-    """agent 模式装配 Agent 桥：必须显式 --run-dir（宿主启动前就得知道桥在哪）。"""
+    """agent 模式装配 Agent 桥：必须显式 --run-dir（宿主启动前就得知道桥在哪）。
+
+    监督缝默认走桥，但默认值不该把人卡住：没给 --run-dir 时退化成
+    NoBridgeSupervisor（jev 卡住按 M0 停机），而不是启动就报错。
+    只有**显式**要了桥却没给目录才是真配置错误：decider=agent / --supervisor agent。
+    """
     if not settings.needs_bridge:
         return None
     if run_dir is None:
-        raise RuntimeError("agent 模式必须指定 --run-dir：宿主需要在启动前知道桥目录")
+        if settings.ui_agent_decider == "agent":
+            raise RuntimeError("decider=agent 必须指定 --run-dir：宿主需要在启动前知道桥目录")
+        if getattr(args, "supervisor", None) == "agent":
+            raise RuntimeError("--supervisor agent 必须指定 --run-dir：宿主需要在启动前知道桥目录")
+        return None
     run_dir.mkdir(parents=True, exist_ok=True)
     bridge = AgentBridge(settings.bridge_path(run_dir),
                          timeout_s=settings.ui_agent_bridge_timeout_s)
@@ -449,7 +458,8 @@ def main(argv: list[str] | None = None) -> int:
                      help="决策层：jev=Jev 决策模型（默认）；llm=大模型代班 Jev；"
                           "agent=宿主对话大模型经文件桥作答；off=关闭决策（只回放缓存）")
     run.add_argument("--supervisor", choices=["on", "off", "agent"], metavar="on|off|agent",
-                     help="大模型缝：on=HTTP 文本模型（默认）；agent=宿主对话大模型经文件桥；"
+                     help="大模型缝：agent=宿主对话大模型经文件桥（默认，不需要 key）；"
+                          "on=HTTP 文本模型（要 TEXT_MODEL_API_KEY）；"
                           "off=全部关闭（升级点直接停、字段只认 --var）")
     run.add_argument("--bridge-timeout", type=float, default=None,
                      help="覆盖 UI_AGENT_BRIDGE_TIMEOUT_S：单次桥 ask 的内核侧 deadline（秒）")

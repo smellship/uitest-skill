@@ -119,21 +119,34 @@ ui-agent/
 
 细节与症状对照见 [references/parallel.md](references/parallel.md)。
 
-## 四档开关：先定这次谁花钱
+## 决策层级：谁拿主意（默认档就是对的，别乱加 flag）
+
+```
+决策层：Jev（默认 --decider jev）          <- 跑已有用例，跑过没跑过都一样
+   | 卡住（低置信 / 原地打转 / 断言不过）
+   v
+监督层：宿主 agent（默认 --supervisor agent）<- 经文件桥把现场交给你裁决
+   | 你也判断不了
+   v
+停机：BLOCKED / 监督不可用 -> 按 M0 语义收尾（不会无限烧）
+```
+
+**先问用户一句「有没有 Jev 的 key」**，再按下表选档。**skill 不配任何大模型 key**。
 
 | 档 | 开关 | 决策者 | 监督者 | 用途 |
 |---|---|---|---|---|
 | 全关 | `--decider off --supervisor off` | 回放缓存 | 无（失配即停） | **零 token 复跑**，CI 常态 |
-| 只开 Jev | `--decider jev --supervisor off` | Jev | 无（阻断即停） | 首次录制，最省心的录制档 |
-| 只开大模型 | `--decider agent --supervisor agent` | 你 | 你 | 没有 Jev key，或要你亲自掌舵 |
-| 全开 | `--decider jev --supervisor agent` | Jev | 你 | 录制时 Jev 走、卡住你救 |
+| 默认 | 不加 flag | Jev | 你 | **有 Jev key 时的录制档**：Jev 走、卡住你救 |
+| 只开 Jev | `--decider jev --supervisor off` | Jev | 无（阻断即停） | 想让 Jev 一口气跑完、不要人工介入 |
+| 只开你 | `--decider agent --supervisor off` | 你 | 无 | **没有 Jev key**，完全由你决策 |
 
 选档规则：
 
-- 用户给了 Jev key、要录制 → **只开 Jev**（不要让 Jev 和你在同一个循环里抢方向盘）。
-- 没有 Jev key → **只开大模型**，并在开跑前用一句话说清楚「这次会消耗你的 token」，然后直接开跑，不追问。
+- 有 Jev key、要录制 → **不加 flag**（默认 `jev` + `agent`），`--run-dir` 给上即可；这是本 skill 的常态。
+- 没有 Jev key → `--decider agent --supervisor off`，并在开跑前用一句话说清楚「这次会消耗你的 token」，然后直接开跑，不追问。
 - 已经有能用的录像、只想验证 → **全关**。
-- `--decider agent` / `--supervisor agent` **必须显式给 `--run-dir`**：内核要在起浏览器之前就知道桥目录。
+- `--decider agent` **必须显式给 `--run-dir`**：内核要在起浏览器之前就知道桥目录。
+  （默认档不需要：没有 `--run-dir` 时会装配一个「不可用」监督替身，jev 卡住按 M0 停机，不会挂死。）
 
 ## 文件桥还是 MCP：默认走文件桥
 
@@ -280,7 +293,7 @@ steps:
 uv run ui-agent case compile --in "$CASE" --out "$CASE_DIR/others/login-query.plan.json" --json
 # ② 首次录制（会问你 ask，见 references/running.md；宿主循环可直接用 scripts/host_loop.py）
 uv run ui-agent run --plan-file "$CASE_DIR/others/login-query.plan.json" \
-  --url "$URL" --decider agent --supervisor off --relearn \
+  --url "$URL" --relearn \
   --var 账号=demo --var 密码=demo \
   --run-dir "$OUT" --json
 # ③ 之后每次零 token 复跑：只改 --decider

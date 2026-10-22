@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fakes import FakeDriver, FakeEngine, blocked, click, done, read_rows, read_trace, settings_for, snapshot
+from fakes import FakeDriver, FakeEngine, blocked, click, done, read_rows, read_trace, settings_for, snapshot, wait
 
 from ui_agent.run.runner import Runner
 from ui_agent.schema.decision import Decision
@@ -24,7 +24,10 @@ def make_runner(tmp_path, snapshots, decisions, checks=(), **over):
 def test_happy_path_marks_page_changed_and_writes_artifacts(tmp_path):
     runner, driver, engine = make_runner(
         tmp_path,
-        [snapshot("a"), snapshot("b", text="查询完成"), snapshot("b", text="查询完成")],
+        # 第二张快照故意还不满足断言：这一步要考的是"模型收到 DONE 前的状态里有没有
+        # page_changed"，步内预检不能替它把结论抢走（预检行为另有专门用例）。
+        [snapshot("a"), snapshot("b"), snapshot("b", text="查询完成"),
+         snapshot("b", text="查询完成")],
         [click(), done()],
         checks=["text_contains=查询完成"],
     )
@@ -224,3 +227,81 @@ def test_trace_has_run_boundaries_and_keeps_legacy_time_field(tmp_path):
     assert rows[-1]["kind"] == "run_end" and rows[-1]["status"] == "ok"
     decisions = [row for row in rows if row["kind"] == "decision"]
     assert all({"step", "url", "title", "time", "at"} <= set(row) for row in decisions)
+
+
+def test_assert_satisfied_mid_step_ends_early_without_another_decision(tmp_path):
+    """点了「查验」之后弹窗盖住它、断言同时成立 → 立刻收尾，不再向模型要决策。
+
+    这就是第 4 步打转的现场：弹窗已经出来了，模型看不到"这就是结果"，只会继续点
+    被弹窗盖住的按钮。判定条件是「上一个动作点的元素现在被盖住」+「断言已成立」。
+    """
+    before = snapshot("a", text="")
+    after = snapshot("b", text="查验结果 发票状态：正常")
+    after["elements"][0]["occluded_by"] = "查验结果 关闭 打印"   # 弹窗盖住了刚点的按钮
+    runner, _, engine = make_runner(
+        tmp_path,
+        [before, after, after],
+        [click(), click()],
+        checks=["text_contains=查验结果", "text_contains=发票状态"],
+    )
+    result = runner.run()
+
+    assert result.status == "ok" and "动作中途断言已成立" in result.detail
+    assert len(engine.seen_states) == 1      # 第二次决策根本没发生
+    rows = read_rows(result.run_dir)
+    # 合成的那条 DONE 只进录像、不进 trace：它不是任何模型的决策
+    assert [row["operation"] for row in rows if row.get("kind") == "decision"] == ["CLICK"]
+    assert [row["ok"] for row in rows if row.get("kind") == "assert"] == [True]
+
+
+def test_wait_keeps_the_last_target_so_the_precheck_can_fire(tmp_path):
+    """点完「查验」再 WAIT 等渲染：弹窗盖住的是查验按钮，WAIT 自己没目标。
+
+    WAIT/PRESS_KEY 这类无目标动作不该把「刚点过的那个控件」忘掉，否则
+    「点查验 -> WAIT -> 弹窗出来」这个最常见的收尾节奏永远命中不了预检。
+    """
+    before = snapshot("a", text="")
+    after = snapshot("b", text="查验结果 发票状态：正常")
+    after["elements"][0]["occluded_by"] = "查验结果 关闭 打印"
+    runner, _, engine = make_runner(
+        tmp_path,
+        [before, after, after],
+        [click(), wait()],
+        checks=["text_contains=查验结果", "text_contains=发票状态"],
+    )
+    result = runner.run()
+
+    assert result.status == "ok" and "动作中途断言已成立" in result.detail
+    assert len(engine.seen_states) == 1, "第二次决策（WAIT）发生前就该收尾"
+
+
+def test_precheck_does_not_fire_before_any_action(tmp_path):
+    """页面一打开就满足断言时仍走 DONE 语义：零动作的步骤不该有自己的成功路径。"""
+    runner, _, engine = make_runner(
+        tmp_path,
+        [snapshot("a", text="已就绪"), snapshot("a", text="已就绪")],
+        [done()],
+        checks=["text_contains=已就绪"],
+    )
+    result = runner.run()
+
+    assert result.status == "ok" and "全部断言通过" in result.detail
+    assert len(engine.seen_states) == 1
+    rows = read_rows(result.run_dir)
+    assert [row["operation"] for row in rows if row.get("kind") == "decision"] == ["DONE"]
+
+
+def test_precheck_skips_partially_satisfied_checks(tmp_path):
+    """只满足一部分断言不能收尾，照常要模型继续做。"""
+    runner, _, engine = make_runner(
+        tmp_path,
+        [snapshot("a", text="查验结果"), snapshot("b", text="查验结果"),
+         snapshot("b", text="查验结果"), snapshot("b", text="查验结果")],
+        [click(), done(), done()],
+        checks=["text_contains=查验结果", "text_contains=历史查验次数"],
+        ui_agent_assert_timeout_ms=0,
+    )
+    result = runner.run()
+
+    assert len(engine.seen_states) >= 2      # CLICK 后没命中，回到模型要 DONE
+    assert result.status == "check_failed"

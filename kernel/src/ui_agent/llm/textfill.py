@@ -68,13 +68,13 @@ def resolve_text(settings: Settings, goal: str, element: Element, state: State,
         raise RuntimeError(
             f"大模型总闸已关（UI_AGENT_SUPERVISOR=false）：没有匹配 --var 的字段值{suffix}；未执行任何输入。")
 
-    if settings.ui_agent_supervisor_mode == "agent":
+    # 监督缝默认问宿主；这次没装桥（裸 CLI、没给 --run-dir）就退回 HTTP 文本模型，
+    # 而不是直接报错——默认值不该让人连一个字段都填不进去。
+    if settings.ui_agent_supervisor_mode == "agent" and bridge is not None:
         # secret 字段绝不经桥：密码等只能由 --var 提供，agent 也看不到值
         if element.secret:
             raise RuntimeError(
                 f"敏感字段「{element.label}」只能通过 --var 提供；未向 agent 询问{suffix}。")
-        if bridge is None:
-            raise RuntimeError("supervisor=agent 需要 Agent 桥，但未装配 bridge。")
         payload = {**field_context(goal, element, state), "hint": hint, "attachments": []}
         try:
             data, meta = bridge.ask("text", payload)

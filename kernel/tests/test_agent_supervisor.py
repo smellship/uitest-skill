@@ -7,7 +7,12 @@ from fakes import FakeBridge, snapshot
 
 from ui_agent.bridge.protocol import BridgeTimeout
 from ui_agent.config import Settings
-from ui_agent.llm.supervisor import AgentSupervisor, Supervisor, make_supervisor
+from ui_agent.llm.supervisor import (
+    AgentSupervisor,
+    NoBridgeSupervisor,
+    Supervisor,
+    make_supervisor,
+)
 from ui_agent.observe.snapshot import build_state
 from ui_agent.schema.supervisor import parse_ruling
 
@@ -124,9 +129,12 @@ class TestBudget:
 
 
 class TestFactory:
-    def test_agent_mode_needs_a_bridge(self):
-        with pytest.raises(RuntimeError, match="需要 Agent 桥"):
-            make_supervisor(Settings(ui_agent_supervisor_mode="agent"))
+    def test_agent_mode_without_bridge_degrades_instead_of_crashing(self):
+        """默认档就是 agent：裸 CLI 没装桥不该起不来，退化成"不可用"按 M0 停机。"""
+        sup = make_supervisor(Settings(ui_agent_supervisor_mode="agent"))
+        assert isinstance(sup, NoBridgeSupervisor)
+        assert sup.available is False
+        assert "宿主监督通道" in sup.unavailable_reason
 
     def test_agent_mode_returns_the_bridge_supervisor(self):
         bridge = FakeBridge()

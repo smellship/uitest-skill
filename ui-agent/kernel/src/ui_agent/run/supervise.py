@@ -51,7 +51,8 @@ def escalate(supervisor: Supervisor | None, state: State, goal: str, trigger: st
     if supervisor is None:
         return Verdict(trigger, "unavailable", detail=UNAVAILABLE_DETAILS["off"])
     if not supervisor.available:
-        return Verdict(trigger, "unavailable", detail=UNAVAILABLE_DETAILS["no_key"])
+        reason = getattr(supervisor, "unavailable_reason", UNAVAILABLE_DETAILS["no_key"])
+        return Verdict(trigger, "unavailable", detail=reason)
     if supervisor.budget.exhausted:
         return Verdict(trigger, "unavailable", detail=f"监督预算已用完（{supervisor.budget.detail}）")
     try:

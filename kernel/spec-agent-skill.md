@@ -210,7 +210,7 @@ SKILL.md 工作流（教 agent 怎么带用户跑一遍）：
 
 1. **环境自检**（一次性）：`scripts/bootstrap` 装 `.venv` + Chromium；告诉用户装了什么。
 2. **收需求**：用户一句话流程 → agent 写 `<用例库>/<场景>/<name>.yaml` → `case compile` 校验 → 落 `plan.json`。
-3. **定决策者**：用户给了 Jev key → 本轮导出 `UI_AGENT_TYPESAFE_API_KEY`（+中转站 `UI_AGENT_TYPESAFE_BASE_URL` / `UI_AGENT_TYPESAFE_AUTH_MODE`），走「全开」；没有 key → **默认走「只开大模型」**（`--decider agent --supervisor agent`），开跑前一句话说明「我将用当前对话模型逐跳作答，会消耗 token」，不拦截、不追问。
+3. **定决策者**：用户给了 Jev key → 本轮导出 `TYPESAFE_API_KEY`（默认端点已是 dmxapi 中转 `https://www.dmxapi.cn/v1/systemone`；换站点再给 `TYPESAFE_BASE_URL` / `TYPESAFE_AUTH_MODE`），走「全开」；没有 key → **默认走「只开大模型」**（`--decider agent --supervisor agent`），开跑前一句话说明「我将用当前对话模型逐跳作答，会消耗 token」，不拦截、不追问。
 4. **跑**：`run --plan-file … --supervisor agent [--decider jev]` 后台启动 → 循环 `bridge wait` → 收到 supervise ask 按 `references/supervising.md` 处置 → `bridge answer` → `finished` 后读 `result.json` / `report.html` 汇报（状态、逐步断言、缺陷候选）。
 5. **复跑省 token**：`--decider off --supervisor off` 零模型回放；失配词表（no-entry / no-variant / wrong-context …）教 agent 读 cache 行并决定「重录还是改断言」。
 6. **收尾纪律**：每次回答前先看 `deadline_s`；阻断处置不做长调研（要长调研就先 HINT 或 ABORT 整理后续跑）；一轮跑完必须确认 status.json 终态与 result.json 一致。

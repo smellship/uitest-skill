@@ -277,10 +277,18 @@ class TestTextFillBridgePath:
         with pytest.raises(RuntimeError, match="未给出字段值"):
             resolve_text(self.settings(), "登录", state.elements[0], state, bridge=bridge)
 
-    def test_missing_bridge_is_an_assembly_error(self):
+    def test_missing_bridge_falls_back_to_the_http_model(self, monkeypatch):
+        """没装桥（裸 CLI、没给 --run-dir）不该卡住填值：退回 HTTP 文本模型。"""
+        calls = {"n": 0}
+
+        def fake_chat(settings, system, user, max_tokens=1024, reasoning=None):
+            calls["n"] += 1
+            return {"text": "from-http"}, {"model": "m", "latency_ms": 3}
+
+        monkeypatch.setattr(textfill_mod, "chat_json", fake_chat)
         state = self.field()
-        with pytest.raises(RuntimeError, match="需要 Agent 桥"):
-            resolve_text(self.settings(), "登录", state.elements[0], state, bridge=None)
+        value, meta = resolve_text(self.settings(), "登录", state.elements[0], state, bridge=None)
+        assert value == "from-http" and meta["source"] == "text_model" and calls["n"] == 1
 
     def test_master_switch_off_still_wins(self):
         bridge = FakeBridge({"text": [{"text": "x"}]})

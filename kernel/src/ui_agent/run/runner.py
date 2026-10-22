@@ -39,7 +39,13 @@ from ui_agent.schema.decision import Decision
 from ui_agent.schema.plan import PlanStep
 from ui_agent.schema.state import Element, RecentAction, State
 from ui_agent.schema.status import STATUS_LABELS
-from ui_agent.verify.asserts import CheckResult, CheckSpec, VerifyOutcome, run_checks_polling
+from ui_agent.verify.asserts import (
+    CheckResult,
+    CheckSpec,
+    VerifyOutcome,
+    run_checks,
+    run_checks_polling,
+)
 
 HINT_LIMIT = 3          # 注入 Jev 的监督提示最多留最近三条
 BUDGET_EXTEND = 10      # 监督模型说"还能继续"时，给预算触发点放宽的量
@@ -74,6 +80,7 @@ class Escalation:
     stop: RunResult | None = None
     acted: bool = False   # 恢复动作已执行（算一次动作）
     cycles: int = 0       # 本次升级额外消耗的决策轮数
+    action: Decision | None = None   # RECOVER 时监督代做的那个动作（预检要认它）
 
 
 def _mask_values(node, values: list[str]):
@@ -145,16 +152,15 @@ class Runner:
     # --- 主流程 ---
 
     def _require_bridge(self) -> None:
-        """mode 需要桥却没装配：装配错误，尽早抛（不要静默退回 HTTP）。"""
-        if not self.s.needs_bridge or self.bridge is not None:
-            return
-        if isinstance(self.engine, AgentEngine) or self._supervisor_needs_bridge():
-            raise RuntimeError(
-                "agent 模式需要 Agent 桥，但 Runner 未装配 bridge：请由 CLI 创建 AgentBridge 后传入。")
+        """真要桥却没装配：装配错误，尽早抛（不要静默退回 HTTP）。
 
-    def _supervisor_needs_bridge(self) -> bool:
-        from ui_agent.llm.supervisor import AgentSupervisor
-        return isinstance(self.supervisor, AgentSupervisor)
+        只看「决策层要桥」：监督缝默认走桥，所以 needs_bridge 默认就是 True，
+        但缺桥时工厂会退化成 NoBridgeSupervisor（jev 卡住按 M0 停机），不是装配错误。
+        """
+        if self.bridge is not None or not isinstance(self.engine, AgentEngine):
+            return
+        raise RuntimeError(
+            "decider=agent 需要 Agent 桥，但 Runner 未装配 bridge：请由 CLI 创建 AgentBridge 后传入。")
 
     def run(self) -> RunResult:
         run_dir = self.run_dir or self._make_run_dir()
@@ -205,13 +211,21 @@ class Runner:
         prev_fp = ""
         step = actions = done_attempts = 0
         blank_tried = 0
+        # 最近一次真正执行的决策：预检只在"模型/宿主在本步动过手"时才考虑，
+        # 回放时不做（录像里本来就有收尾那条 DONE，抢跑会把录像截短）。
+        last_decision: Decision | None = None
+        prior_state: State | None = None
+        last_target: int | None = None
 
         def after(esc: Escalation) -> None:
-            nonlocal step, actions, prev_fp
+            nonlocal step, actions, prev_fp, last_decision, last_target
             step += esc.cycles
             if esc.acted:
                 actions += 1
                 prev_fp = fp
+                # 监督替模型做了动作：它照样改变页面，预检要认它
+                last_decision = esc.action
+                last_target = esc.action.target_element if esc.action else None
 
         while True:
             raw = self.driver.snapshot()
@@ -230,6 +244,38 @@ class Runner:
             state = build_state(raw, self.recent, self.executor.click_failures,
                                 self.s.max_elements, self.s.max_text)
             self._dump_state(run_dir, step, state)
+
+            # 断言已经成立、而且模型刚操作过的那个控件被新出现的东西盖住了 —— 这就是
+            # "结果已经弹出来了，模型还在往弹窗下面点"的现场，直接收尾，不再向模型要决策。
+            # 条件都必要，缺一不可：
+            #   checks        没有断言就没有"达成"可言
+            #   非 CACHE_SOURCE  回放不预检（录像自带收尾那条，抢跑会把录像截短）
+            #   非 DONE/BLOCKED 这两类自己已经评过断言，再评一次是重复
+            #   prior_state   动作之前断言还不成立：本来就成立的断言（比如"发票号码还在"）
+            #                 不能算这个动作的功劳
+            #   last_target   上一个动作确实点了某个元素
+            #   occluded_by   而且它现在被盖住了 —— 页面顶部多了东西，通常就是结果浮层
+            if (actions and self.checks
+                    and last_decision is not None
+                    and last_decision.model != CACHE_SOURCE
+                    and last_decision.operation not in ("DONE", "BLOCKED")
+                    and prior_state is not None
+                    and not self._satisfied(prior_state)
+                    and self._target_now_occluded(state, last_target)):
+                early = self._precheck(state)
+                if early is not None:
+                    # 这一步自己收尾，不向模型再要一个决策。
+                    # 录像里补一条 DONE：否则录像以 CLICK 收尾，下次回放放完 CLICK 就
+                    # "录像走到头还没收尾"（truncated），零 token 回归直接失效。
+                    # 但**不写 decision 行**：那不是任何模型的决策，写进去会把 via 归因搅浑；
+                    # 收尾理由由 assert 行与 run_end.detail 交代。
+                    if self.s.debug_artifacts:
+                        self._shot(run_dir, f"{step:02d}-done")
+                    self._stage(Decision(operation="DONE", confidence=1.0), state)
+                    self._assert_trace(step, early)
+                    self._say(f"✓ 动作后断言已全部成立，直接收尾（step {step}）")
+                    return RunResult("ok", step, run_dir, "动作中途断言已成立：全部断言通过",
+                                     early.checks)
 
             if step >= self.max_decisions:
                 esc = self._escalate(run_dir, step, state, None, "budget_decisions",
@@ -410,10 +456,16 @@ class Runner:
                 after(esc)
                 continue
 
+            prior_state = state
             self._execute(step, state, decision)
             actions += 1
             step += 1
             prev_fp = fp
+            last_decision = decision
+            # WAIT / PRESS_KEY 这类没有目标的动作不该把"刚点过的那个控件"忘掉：
+            # 点完查验 -> WAIT 等渲染 -> 弹窗盖住查验按钮，最有意义的目标仍是那个按钮。
+            if decision.target_element is not None:
+                last_target = decision.target_element
 
     def _rules(self) -> list[str] | None:
         return [NEXT_ACTION, *self.hints] if self.hints else None
@@ -451,6 +503,7 @@ class Runner:
             self.stuck.reset()
             esc.cycles, esc.acted = 2, True
             recovery = recover_decision(verdict.ruling)
+            esc.action = recovery
             step += 1
             self._dump_state(run_dir, step, state)
             self._execute(step, state, recovery, supervisor=verdict.trace())
@@ -756,6 +809,34 @@ class Runner:
                                self.s.max_elements, self.s.max_text)
         return run_checks_polling(self.checks, state, fresh,
                                   self.s.ui_agent_assert_timeout_ms, dom=self.driver)
+
+    def _target_now_occluded(self, state: State, index: int | None) -> bool:
+        """上一个动作点的那个元素，现在是不是被别的东西盖住了。
+
+        occluded_by 由快照算出来（谁压住了它）。点了它之后立刻被盖住，说明新出现了一层
+        浮层；再叠加"断言已经成立"，就是"结果已经出来"的确凿迹象。
+        """
+        if index is None:
+            return False
+        hit = next((el for el in state.elements if el.index == index), None)
+        return bool(hit is not None and hit.occluded_by)
+
+    def _satisfied(self, state: State) -> bool:
+        """这一张快照下断言是否已经全过（预检的"动作之前"对照，不查 DOM 属性）。"""
+        return all(item.ok for item in run_checks(state, self.checks))
+
+    def _precheck(self, state: State) -> VerifyOutcome | None:
+        """步内预检：动作已经让全部断言成立时，不再向模型要下一个决策。
+
+        和 DONE 验收的区别是**不等**：只评当前这一张快照，全过才算命中；没过就返回 None，
+        让循环照常往下走。这样弹窗一出现就能收尾，而不是再烧一次模型、看它去点被遮住的按钮。
+        """
+        if not self.checks:
+            return None
+        checks = run_checks(state, self.checks, dom=self.driver)
+        if not all(item.ok for item in checks):
+            return None
+        return VerifyOutcome(checks=checks)
 
     def _assert_trace(self, step: int, outcome: VerifyOutcome) -> None:
         self._emit({

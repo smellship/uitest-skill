@@ -202,7 +202,7 @@ class TestAgentModeRunDir:
                          "--decider", "agent", "--run-dir", None,
                          "--json"])
         assert code == 2
-        assert "agent 模式必须指定 --run-dir" in capsys.readouterr().err
+        assert "decider=agent 必须指定 --run-dir" in capsys.readouterr().err
 
     def test_agent_supervisor_requires_run_dir(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli, "Runner", lambda *a, **k: (_ for _ in ()).throw(
@@ -210,7 +210,7 @@ class TestAgentModeRunDir:
         code = cli.main(["run", "--goal", "查询", "--url", "http://x/",
                          "--supervisor", "agent", "--json"])
         assert code == 2
-        assert "agent 模式必须指定 --run-dir" in capsys.readouterr().err
+        assert "--supervisor agent 必须指定 --run-dir" in capsys.readouterr().err
 
     def test_off_decider_needs_no_run_dir(self, tmp_path, capsys, monkeypatch):
         """零模型回放完全不要求桥、不要求 --run-dir。"""
@@ -247,10 +247,12 @@ class TestSupervisorMapping:
         assert settings.ui_agent_supervisor_mode == "agent"
 
     def test_needs_bridge_only_in_agent_modes(self):
+        """默认就是 agent 监督（问宿主），所以不带 flag 也要桥；只有总闸关掉才不要。"""
         assert cli.apply_overrides(cli.Settings(), _run_args(decider="agent")).needs_bridge
         assert cli.apply_overrides(cli.Settings(), _run_args(supervisor="agent")).needs_bridge
         assert not cli.apply_overrides(cli.Settings(), _run_args(supervisor="off")).needs_bridge
-        assert not cli.apply_overrides(cli.Settings(), _run_args()).needs_bridge
+        msg = "监督缝默认问宿主，默认就需要桥"
+        assert cli.apply_overrides(cli.Settings(), _run_args()).needs_bridge, msg
 
     def test_master_switch_off_ignores_agent_mode(self):
         settings = cli.apply_overrides(cli.Settings(), _run_args(supervisor="off"))

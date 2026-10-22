@@ -130,6 +130,20 @@ def test_type_text_carries_stored_value(tmp_path):
     assert decision.raw_answers == {}, "var 来源的值不落盘：回放时按 --var 现取"
 
 
+def test_done_replays_even_when_landing_page_differs(tmp_path):
+    """登录后落到哪个页面是站点决定的：录制落控制台、回放被 redirectUrl 送回业务页。
+
+    DONE 不指向元素，靠“本步断言成立”成立，所以不该被地址守卫挡住；断言由 runner
+    收到 DONE 后当场重评，页面不对就判未通过，不会静默成功。
+    """
+    session = session_with(tmp_path, [rec("DONE", url="http://x/console")])
+    decision, reason = match_next(session, state_of(url="http://x/invoice"))
+    assert reason == "" and decision is not None and decision.operation == "DONE"
+    # 但带目标的动作仍受守卫约束：地址不对就不许按语义重定位（变体选择阶段就落空）
+    session = session_with(tmp_path, [rec("CLICK", url="http://x/console")])
+    assert match_next(session, state_of(url="http://x/invoice"))[0] is None
+
+
 def test_strict_probe_flags_signature_change(tmp_path):
     state = state_of()
     session = session_with(tmp_path, [rec("CLICK", signature=state_signature(state))])

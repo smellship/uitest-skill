@@ -276,6 +276,10 @@ def blocked(confidence: float = 0.9) -> Decision:
     return Decision(operation="BLOCKED", confidence=confidence)
 
 
+def wait(confidence: float = 0.9) -> Decision:
+    return Decision(operation="WAIT", confidence=confidence)
+
+
 def read_trace(run_dir) -> list[dict]:
     """只留决策行：断言都按决策行的下标写的；要读全量时间线用 read_rows。"""
     return [row for row in read_rows(run_dir) if row.get("kind", "decision") == "decision"]

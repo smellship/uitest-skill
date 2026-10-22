@@ -80,11 +80,18 @@ uv run python -m playwright install chromium
 
 | 变量 | 用途 | 什么时候必需 |
 |---|---|---|
-| `TYPESAFE_API_KEY` / `TYPESAFE_MODEL` | Jev 决策模型 | `--decider jev` |
-| `TEXT_MODEL_API_KEY` / `TEXT_MODEL_BASE_URL` / `TEXT_MODEL` | HTTP 文本模型（监督 / 填值 / planner） | `--supervisor on`、`case draft`、`plan` |
+| `TYPESAFE_API_KEY` / `TYPESAFE_MODEL` | Jev 决策模型（默认端点 dmxapi 中转，换站点才给 `TYPESAFE_BASE_URL`） | 可选。**给了就走 Jev 决策**；不给则决策交给宿主 agent |
+| `TEXT_MODEL_API_KEY` / `TEXT_MODEL_BASE_URL` / `TEXT_MODEL` | HTTP 文本模型（旧路径） | 只有显式 `--supervisor on`、`case draft`、`plan` 才要 |
 
-`--decider agent` 和 `--supervisor agent` **不需要任何 key**：模型在宿主那边。
-零 token 回放（`--decider off --supervisor off`）也不需要。
+**默认层级（先搞清这个再配置）**：
+
+1. **决策层 = `jev`**：已有用例（跑过没跑过都一样）由 Jev 决策执行。填了 `TYPESAFE_API_KEY` 才有 Jev。
+2. **卡住了问宿主**：`jev` 连续低置信 / 原地打转 / 断言不过时，通过文件桥把现场交给宿主 agent 裁决（`--supervisor agent`，**默认值**）。
+3. **宿主也判断不了才停**：`BLOCKED` 或监督不可用 → 按 M0 停机语义收尾，不会无限烧。
+
+所以 **skill 不需要配大模型 key**，`TEXT_MODEL_API_KEY` 不是必填项。
+`--supervisor off` 才是彻底关掉兜底；`--decider agent` 是完全交给宿主决策（没 jev key 时用这个）。
+零 token 回放（`--decider off --supervisor off`）两个 key 都不要。
 
 `.env` 已在 `.gitignore` 里。**不要**把 key 写进命令、YAML、issue、对话。
 

@@ -279,12 +279,14 @@ class TestAssemblyGuards:
             Runner(settings, "查询", "http://x/", checks=[], task="t", driver=driver,
                    verbose=False)
 
-    def test_supervisor_mode_agent_without_bridge_also_raises(self, tmp_path):
+    def test_supervisor_mode_agent_without_bridge_degrades_to_m0(self, tmp_path):
+        """监督缝默认问宿主，但这次没装桥：不抛装配错，退化成不可用按 M0 停机。"""
         settings = agent_settings(tmp_path, ui_agent_decider="jev")
         driver = FakeDriver([snapshot("a")])
-        with pytest.raises(RuntimeError, match="需要 Agent 桥"):
-            Runner(settings, "查询", "http://x/", checks=[], task="t", driver=driver,
-                   verbose=False)
+        runner = Runner(settings, "查询", "http://x/", checks=[], task="t", driver=driver,
+                        verbose=False)
+        assert runner.supervisor is not None, "总闸没关就该有监督对象（哪怕是不可用的替身）"
+        assert runner.supervisor.available is False, "缺桥时工厂给 NoBridgeSupervisor，不可用"
 
     def test_off_decider_requires_no_bridge(self, tmp_path):
         settings = settings_for(tmp_path, ui_agent_decider="off", ui_agent_supervisor=False,

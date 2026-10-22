@@ -15,16 +15,18 @@ $env:UI_AGENT_SETTLE_MS = "1500"
 
 | 变量 | 用途 | 没有它会怎样 |
 |---|---|---|
-| `TYPESAFE_API_KEY` | Jev 决策模型 | `--decider jev` 报「缺少 TYPESAFE_API_KEY」；`--decider agent` / `off` **不需要** |
-| `TEXT_MODEL_API_KEY` | 文本模型（字段值 / HTTP 监督 / planner） | `--supervisor on` 报「缺少 TEXT_MODEL_API_KEY」；`--supervisor agent` / `off` **不需要** |
+| `TYPESAFE_API_KEY` | Jev 决策模型（默认决策层） | 不填也能跑，但决策改由宿主 agent 做；填了才有 Jev 决策。`--decider agent` / `off` **不需要** |
+| `TEXT_MODEL_API_KEY` | HTTP 文本模型（旧路径） | **skill 默认不配这个 key**。只有显式 `--supervisor on`（不用宿主、自己调 HTTP）才需要；默认 `--supervisor agent` 走宿主，**不需要** |
+
+> **层级先搞清**：决策层默认 `jev`（有 key 就用 Jev 跑已有用例），jev 卡住时由**宿主 agent** 接手裁决；宿主也判断不了才停机。skill 不配任何大模型 key。
 
 其余模型参数一般不用改：
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `TYPESAFE_MODEL` | `jev-latest` | |
-| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai/v1/systemone` | |
-| `TYPESAFE_AUTH_MODE` | `bearer` | `bearer`=原生；`appcode`=阿里云云市场 |
+| `TYPESAFE_BASE_URL` | `https://www.dmxapi.cn/v1/systemone` | dmxapi 中转；换站点改这一个值 |
+| `TYPESAFE_AUTH_MODE` | `bearer` | `bearer`=中转站/官方原生；`appcode`=阿里云云市场 |
 | `TEXT_MODEL_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI 兼容 |
 | `TEXT_MODEL` | `deepseek-flash` | |
 | `TEXT_MODEL_REASONING` | `none` | |
@@ -54,7 +56,7 @@ export UI_AGENT_CACHE_DIR="<用例库>/.cache"
 |---|---|---|
 | `UI_AGENT_DECIDER` | `jev` | `jev` / `llm` / `agent` / `off` |
 | `UI_AGENT_SUPERVISOR` | `true` | 大模型**总闸**。`false` = 监督缝停用 + 升级点直接停 + `TYPE_TEXT` 只认 `--var` |
-| `UI_AGENT_SUPERVISOR_MODE` | `model` | `model`=HTTP 文本模型；`agent`=文件桥 |
+| `UI_AGENT_SUPERVISOR_MODE` | `agent` | `agent`=文件桥问宿主（默认，不需要 key）；`model`=HTTP 文本模型（要 `TEXT_MODEL_API_KEY`） |
 | `UI_AGENT_BRIDGE_DIR` | 空（`<run-dir>/bridge`） | 桥目录。一般不用设 |
 | `UI_AGENT_BRIDGE_TIMEOUT_S` | **180** | 单次 ask 的内核侧 deadline（秒） |
 | `UI_AGENT_CONF_MIN` | `0.55` | 置信度下限。连续 3 次低于它 = `low_confidence` |
@@ -62,6 +64,9 @@ export UI_AGENT_CACHE_DIR="<用例库>/.cache"
 | `SUPERVISOR_PER_RUN` | `6` | 整轮最多问几次监督 |
 
 **总闸优先**：`UI_AGENT_SUPERVISOR=false` 时 `UI_AGENT_SUPERVISOR_MODE` 被忽略。
+
+**默认档没有宿主时不会挂死**：`--supervisor agent` 但没给 `--run-dir`（裸 CLI）时，内核装配一个
+「不可用」替身，jev 卡住按 M0 停机语义收尾，`trace` 里如实写「没有可用的宿主监督通道」。
 
 ## 4. 缓存与回放
 
@@ -129,7 +134,10 @@ export UI_AGENT_CACHE_DIR="<用例库>/.cache"
 # 零 token 回放（最快）
 UI_AGENT_MODE=ci UI_AGENT_SETTLE_MS=300 uv run ui-agent run ... --decider off --supervisor off
 
-# 录制（要模型决策）
+# 录制（有 jev key 时：Jev 决策，卡住问宿主——这是默认档，不用写 flag）
+uv run ui-agent run ... --relearn --mode debug --run-dir <目录>
+
+# 录制（没 jev key：完全交给宿主决策）
 uv run ui-agent run ... --decider agent --supervisor off --relearn --mode debug
 
 # 探索（不碰录像）

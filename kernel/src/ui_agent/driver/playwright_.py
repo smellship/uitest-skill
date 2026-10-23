@@ -85,6 +85,20 @@ def wait_until_stable(sample: Callable[[], dict], clock: Callable[[], float],
         raw = nxt
 
 
+# 等业务内容时多久看一次（秒）。比指纹采样的 0.25s 粗一档：这段时间页面本来在变。
+WATCH_INTERVAL_S = 0.4
+
+
+def usable_elements(raw: dict) -> list[dict]:
+    """快照里有没有"人真的能操作"的元素。
+
+    光有元素不算数：SPA 先把隐藏的 file input 之类的壳画出来是常态（实测登录后跳转，
+    外壳里只有一个 hidden 的「资质文件」），拿这种快照去回放比对一定失败。
+    """
+    return [item for item in (raw.get("elements") or [])
+            if not item.get("hidden") and item.get("in_viewport", True)]
+
+
 class StaleTarget(RuntimeError):
     """索引不在当次快照中（页面已变）。"""
 
@@ -227,16 +241,37 @@ class Driver:
     # --- 首帧就绪门 / 空白页恢复 ---
 
     def wait_first_paint(self) -> dict:
-        """首帧：等渲染稳定；稳定后仍然一个元素都没有（空白页）就刷新一次再等。
+        """首帧：等渲染稳定；稳定后还只有外壳或空白页，就继续等 / 刷新一次再等。
 
         只做"等一下、必要时刷新一次"，不猜内容；超时后原样交回，由决策层按事实处理。
         """
         raw = self.wait_rendered()
-        if raw.get("elements"):
+        if usable_elements(raw):
             return raw
-        self.paint_note = "首屏稳定后仍为空白页，已刷新一次"
+        # 稳定了却还没有可操作元素：SPA 常先把导航壳画出来、业务帧过几秒才挂上。
+        # 回放模式没有模型兜底，冲进这种壳页面就会按语义重定位失败（录像里那一步整段作废），
+        # 所以这里要等内容真的出来，而不是"稳定"就算数。
+        raw = self.wait_content()
+        if usable_elements(raw):
+            self.paint_note = "首屏稳定后只有外壳，已等业务内容渲染完成"
+            return raw
+        self.paint_note = "首屏稳定后仍无可操作元素，已刷新一次"
         self.reload()
-        return self.wait_rendered()
+        raw = self.wait_rendered()
+        return raw if usable_elements(raw) else self.wait_content()
+
+    def wait_content(self) -> dict:
+        """等到快照里出现至少一个可操作元素（超时就交回当前快照）。
+
+        判据是"有没有东西能点/能填"，不是"页面稳不稳"：外壳稳定得很快，但那时没有任何
+        可用元素，据此比对面元素等于自找失败。
+        """
+        deadline = self._clock() + self.s.ready_timeout_ms / 1000
+        raw = self.snapshot()
+        while not usable_elements(raw) and self._clock() < deadline:
+            self._sleep(WATCH_INTERVAL_S)
+            raw = self.snapshot()
+        return raw
 
     def wait_rendered(self) -> dict:
         """等指纹连续安静一段时间，返回最后一次采样（超时就用当前快照）。"""

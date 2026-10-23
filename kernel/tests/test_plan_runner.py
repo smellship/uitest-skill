@@ -363,3 +363,27 @@ def test_no_bridge_in_agent_mode_is_an_assembly_error(tmp_path):
     else:
         raise AssertionError("agent 模式缺桥应当直接抛装配错误")
 
+
+def test_each_step_records_how_long_it_took(tmp_path):
+    """总耗时早就有，但单步耗时只在各步自己目录的 result.json 里，summary 看不到。
+
+    用户问「三步耗时如何」时，只能去翻每步的子目录；把每步耗时收进 summary 与 step_end 行，
+    一眼就能看出时间花在哪一步。
+    """
+    settings = settings_for(tmp_path)
+    driver = FakeDriver([snapshot("a", text="登录完成"), snapshot("b", text="票据类型")])
+    engine = FakeEngine([done()])
+    runner = PlanRunner(settings, two_step_plan(), driver=driver, engine=engine, verbose=False)
+    result = runner.run()
+
+    assert all(step.duration_s >= 0 for step in result.steps)
+    summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    durations = [step["duration_s"] for step in summary["steps"]]
+    assert len(durations) == len(summary["steps"])
+    assert all(isinstance(value, float) and value >= 0 for value in durations)
+    rows = [json.loads(line) for line in
+            (result.run_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    ends = [row for row in rows if row.get("kind") == "step_end"]
+    assert [row["duration_s"] for row in ends] == durations
+

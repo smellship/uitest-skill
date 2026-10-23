@@ -187,6 +187,17 @@ python scripts/ask.py answer --run-dir "$OUT" --error "权限不足，打不开�
 `--json` 时 stdout 只有一行 JSON（`ok/status/status_label/detail/run_dir/report/steps/checks/defect_candidates`）。
 不加 `--json` 是人读的进度日志。
 
+### 耗时看哪里
+
+| 想知道的 | 看这个 |
+|---|---|
+| 整次跑了多久 | `summary.json` 的 `duration_s`（单目标看 `result.json`）|
+| **每一步**多久 | `summary.json` 的 `steps[].duration_s`（计划模式；与根 trace 的 `step_end` 行同值）|
+| 时间花在模型还是页面上 | 根 trace 的 `decision` 行按 `plan_step` 分组求 `latency_ms` 之和：差值就是内核动作与等待的时间 |
+
+单步耗时从 `step_start` 起算（含该步的 `goto` 导航），到 `step_end` 收尾。
+零 token 回放没有 `latency_ms`（不发模型请求），所以那几列是空的——这正是它快的原因。
+
 **`detail` 里有一句话值得单独认**：`动作中途断言已成立：全部断言通过`。
 意思是某一步的动作（比如点「查验」）已经让该步断言全过，内核**不再向模型要下一个决策**、
 直接收尾 —— 典型场景是点完按钮弹出结果浮层，模型看不到「这就是结果」，只会继续往浮层下面点。

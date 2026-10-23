@@ -60,6 +60,7 @@ class StepOutcome:
     defects: list[str] = field(default_factory=list)
     attempt: int = 1
     replan: list[PlanStep] | None = None
+    duration_s: float = 0.0
 
     @property
     def label(self) -> str:
@@ -79,6 +80,7 @@ class StepOutcome:
             "status_label": self.label,
             "detail": self.detail,
             "decisions": self.decisions,
+            "duration_s": self.duration_s,
             "checks": [c.model_dump() for c in self.checks],
             "defects": self.defects,
             "replan": [s.model_dump() for s in self.replan or []],
@@ -176,6 +178,7 @@ class PlanRunner:
             while index <= len(self.plan.steps):
                 attempts[index] = attempts.get(index, 0) + 1
                 step = self.plan.steps[index - 1]
+                step_started = datetime.now()
                 self._nav(index, step)
                 if self.verbose:
                     self._say(f"\n=== 第 {index}/{len(self.plan.steps)} 步：{step.goal} ===")
@@ -195,10 +198,11 @@ class PlanRunner:
                     outcome = StepOutcome(index, step.goal, self._dir_name(index, step, attempts[index]),
                                           "error", f"{exc.__class__.__name__}: {exc}", attempt=attempts[index])
                 outcomes.append(outcome)
+                outcome.duration_s = round((datetime.now() - step_started).total_seconds(), 1)
                 writer.write({"kind": "step_end", "at": now_at(), "plan_step": index,
                               "status": outcome.status, "status_label": outcome.label,
                               "detail": outcome.detail, "decisions": outcome.decisions,
-                              "attempt": outcome.attempt})
+                              "attempt": outcome.attempt, "duration_s": outcome.duration_s})
                 actions.extend(self._step_actions(run_dir, outcome))
                 self._say(self._line(outcome))
                 if outcome.success:

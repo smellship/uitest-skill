@@ -99,3 +99,26 @@ def test_still_blank_after_reload_stops_at_one_reload(tmp_path) -> None:
     raw = driver.wait_first_paint()
     assert page.reloads == 1, "只刷新一次，剩下的交给决策层按事实处理"
     assert not raw["elements"]
+
+
+def hidden_only(fingerprint: str) -> dict:
+    """登录后跳转的实测形态：外壳里只有一个隐藏的 file input，没有任何可操作元素。"""
+    elements = [{"index": 1, "role": "file", "label": "资质文件",
+                 "operations": ["UPLOAD"], "hidden": True, "in_viewport": False}]
+    return {"page": {"text": "云控制台\n销项"}, "elements": elements, "fingerprint": fingerprint}
+
+
+def test_hidden_shell_waits_for_content_instead_of_replaying_it(tmp_path) -> None:
+    """外壳里只有一个隐藏元素时不能当就绪：回放没有模型兜底，冲进去那一步整段作废。"""
+    clock = Clock()
+    page = StubPage(clock)
+    driver = Driver(settings_for(tmp_path, ready_stable_ms=100, ready_timeout_ms=4000),
+                    clock=clock.now)
+    driver.page = page
+    # 前 1.2 秒是外壳，之后业务帧挂上、出现可点元素
+    driver.snapshot = lambda: (hidden_only("shell") if clock.t < 1.2  # type: ignore[method-assign]
+                               else raw_of("content", ["查询"]))
+    raw = driver.wait_first_paint()
+    assert raw["fingerprint"] == "content", "外壳里只有隐藏元素，要等业务内容出来"
+    assert page.reloads == 0, "内容自己在出来，不必刷新"
+    assert "外壳" in driver.paint_note

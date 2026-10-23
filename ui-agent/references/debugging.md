@@ -81,11 +81,15 @@
 | `assert` | DONE 后验收：`ok` / `attempts` / `elapsed_ms` / 逐条 `checks` | 断言为什么没过 |
 | `model` | 没产出决策的模型调用（如 planner） | 少见 |
 | `cache` | 录像结局：`mode` / `write` / `hits` / `misses` / `miss_reasons` | 回放对不上 |
-| `step_start` / `step_end` | 计划模式的步边界 | 定位是哪一步崩 |
+| `step_start` / `step_end` | 计划模式的步边界；`step_end` 带 `duration_s`（这一步耗时） | 定位是哪一步崩、哪一步慢 |
 
-`decision` 行的关键字段：`step` / `url` / `title` / `operation` / `target` / `target_element` /
+`decision` 行的关键字段：`step` / `plan_step` / `url` / `title` / `operation` / `target` / `target_element` /
 `confidence` / `model` / `latency_ms` / `usage` / `action`（含 `ok` / `detail` / `level`）/
 `signal`（卡住信号）/ `supervisor`（裁决）/ `via`（`cache`|`agent`|`http`|`""`）/ `text_model`。
+
+**`step` 与 `plan_step` 不是一回事**：`step` 是这一步内部的局部编号（每步都从 0 开始），
+`plan_step` 才是计划里的步号（1 起）。按步聚合耗时/决策数要用 `plan_step`，用 `step` 会把
+第 2 步的决策算到第 1 步头上。
 
 ### `via` 告诉你这一步谁在开车
 

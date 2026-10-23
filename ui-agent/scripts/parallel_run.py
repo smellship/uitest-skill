@@ -8,7 +8,7 @@ Chromium 对 user-data-dir 加单实例锁，共用会让后起的那路直接�
 做法上刻意保持笨：本脚本不 import 内核，也不解析桥，只负责
   ① 给每一路分配 <输出根>/<名字>/ 与 <输出根>/.profiles/<名字>/ ；
   ② 并发起 N 个 `host_loop.py` 子进程；
-  ③ 收尾时按 status 汇总，全 ok 才算过。
+  ③ 收尾时按 status 汇总，全 ok 才算过（探索路 done_unverified 也算过——它本来就没有断言）。
 
 用法（清单文件最省事，见 references/parallel.md）：
 
@@ -85,6 +85,9 @@ class Job:
         self.mode = merged.get("mode")
         self.bridge_timeout = merged.get("bridge_timeout")
         self.extra = list(merged.get("extra") or [])
+        # extra 里带 --explore 时，这一路是探索：正常终态是 done_unverified（没有断言可验），
+        # 汇总时不能按 run 的口径把它标成失败。
+        self.is_explore = "--explore" in self.extra
         self.root = root
         self.run_dir = root / name
         self.profile_dir = root / PROFILE_DIRNAME / name
@@ -199,6 +202,13 @@ def _parse_vars(items: list[str]) -> dict[str, str]:
 
 # ---------------------------------------------------------------- 并发执行
 
+def passed(job: "Job") -> bool:
+    """这一路算不算过：run 只认 ok；explore 没有断言可验，done_unverified 也是正常收尾。"""
+    if job.is_explore:
+        return job.status in ("ok", "done_unverified") and job.exit_code == 0
+    return job.status == "ok"
+
+
 class Runner:
     def __init__(self, jobs: list[Job], kernel: Path, script: Path, python: str,
                  max_parallel: int, log_root: Path) -> None:
@@ -234,7 +244,7 @@ class Runner:
         job.exit_code = code
         job.elapsed = time.monotonic() - started
         job.status, job.detail = self._read_outcome(job)
-        mark = "✓" if job.status == "ok" else "✗"
+        mark = "✓" if passed(job) else "✗"
         say(f"{mark} {job.name} 结束：status={job.status} exit={code} {job.elapsed:.1f}s — {job.detail}")
 
     def _read_outcome(self, job: Job) -> tuple[str, str]:
@@ -287,10 +297,10 @@ class Runner:
         say("=" * 78)
         width = max(len(job.name) for job in self.jobs)
         for job in self.jobs:
-            mark = "✓" if job.status == "ok" else "✗"
+            mark = "✓" if passed(job) else "✗"
             say(f"  {mark} {job.name.ljust(width)}  {job.status.ljust(12)} "
                 f"exit={job.exit_code}  {job.elapsed:5.1f}s  {job.detail}")
-        failed = [job for job in self.jobs if job.status != "ok"]
+        failed = [job for job in self.jobs if not passed(job)]
         say()
         if failed:
             say(f"没过：{len(failed)}/{len(self.jobs)} → " + "、".join(job.name for job in failed))

@@ -43,7 +43,8 @@ python scripts/host_loop.py --explore \
   --goal-file "$GOAL_FILE" \
   --url "$URL" \
   --policy scripts/explore_policy.py \
-  --decider agent --supervisor off
+  --decider agent --supervisor off \
+  --mode ci --extra="--settle-ms=200"   # 提速项，见「探索提速」
 ```
 
 `--explore` 让它走 `explore` 子命令而不是 `run`：不传 `--check`、不传 `--cache`、不传 `--relearn`。
@@ -135,6 +136,52 @@ steps:
 
 **页面越大，每次决策重发的 state 越贵**（每次调用都重发整份快照，不增量）。
 探索前先把 `MAX_ELEMENTS` / `MAX_TEXT` 收小，见 [envs.md](envs.md)。
+
+## 探索提速：钱花在哪，就从哪砍
+
+本地夹具实测（1 次探索 = 2 次决策，`done_unverified` 收尾）：
+
+| 配置 | 总耗时 | 决策往返 | 非决策时间（浏览器启动 + settle + 截图） |
+|---|---|---|---|
+| `--decider agent`（宿主答桥） | 5.9s | 266ms/次 | 5.4s |
+| `--decider agent --extra="--settle-ms=200"` | 4.7s | 257ms/次 | 4.2s |
+| 同上再加 `--mode ci` | 4.5s | 250ms/次 | 4.0s |
+| `--decider jev`（HTTP 往返） | 7.7s | **1040ms/次** | 5.6s |
+
+三条结论：
+
+1. **模型往返不是大头**——大头是每个决策之间的固定成本：浏览器冷启动、`settle`
+   等待（每动作最多 3×`settle_ms`，见 [running.md](running.md)「全流程提速」）、debug 模式的逐步截图。
+2. **探索档用 `--settle-ms=200` + `--mode ci`**：探索是给你看的，不是给用户看的——
+   不需要有头、不需要每步截图。ci 模式下 `explore/` 四件产物照常落盘（已验证）。
+   真页面加载慢的话把 settle 调回 500，别调回 700 以上。
+3. **决策档看情况选**：`agent`（宿主自己答）单次往返快、不花 Jev token，但**你的思考时间
+   也算在墙钟里**；`jev` 无人值守快，但每次 1s 左右的 HTTP 往返在几十步的探索里会累积。
+   要摸清一个陌生页面（每一步都得看快照想一下）用 agent + `scripts/ask.py`；
+   要批量扫页面用 jev。
+
+### 多路探索用 parallel_run
+
+一个页面一路，`extra` 里带 `--explore`（汇总时 `done_unverified` 算过）：
+
+```json
+{
+  "defaults": {"decider": "agent", "supervisor": "off",
+               "policy": "scripts/explore_policy.py", "extra": ["--explore"]},
+  "jobs": [
+    {"name": "exp-登录页", "goal": "…", "url": "…/login"},
+    {"name": "exp-列表页", "goal": "…", "url": "…/list"}
+  ]
+}
+```
+
+实测两路并行墙钟 9s，串行是 17s。见 [parallel.md](parallel.md) 第 3 节。
+
+### 最省的一步：别探索两遍
+
+探索产物 `trajectory.md` + `explored.yaml` 就是给「写 YAML」那一步用的——照着轨迹里的
+控件标签拆步、补断言，**写完直接进录制**（`--decider agent --cache on`），不要再跑一次
+「精确指令探索」验证。录制那次真跑本身就是验证：断言过不了会当场失败，过了才有录像。
 
 ## 探索之后要不要留 `explore/`
 

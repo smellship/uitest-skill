@@ -102,6 +102,8 @@ python scripts/parallel_run.py --manifest jobs.json --max-parallel 4
 - **相对路径按清单文件所在目录解析**，不按你当前 cwd——把清单和用例库放一起最省心。
 - 每个作业一个 `name`，决定它的产物目录 `<out>/<name>/` 与 profile `<out>/.profiles/<name>/`。
 - 作业级字段覆盖 `defaults`；`vars` 是对象，不是字符串数组。
+- `extra` 是原样透传给 `host_loop.py` 的参数数组（放 `defaults` 里就是全体共用），
+  比如 `["--explore"]`、`["--settle-ms=300"]`。
 - `--max-parallel` 是并发上限，不写就全上。
 
 不用清单也可以，命令行直给：
@@ -118,7 +120,8 @@ python scripts/parallel_run.py --out /tmp/runs --max-parallel 2 \
 
 ### 它做了什么、不做什么
 
-做：分配目录 → 并发起 N 个 `host_loop.py` → 收尾按 `status` 汇总（全 `ok` 才 exit 0）。
+做：分配目录 → 并发起 N 个 `host_loop.py` → 收尾按 `status` 汇总（全 `ok` 才 exit 0；
+`extra` 里带 `--explore` 的作业没有断言可验，`done_unverified` 也算过）。
 
 不做：不 import 内核、不解析桥、不替你决策。真正回答 ask 的仍是 `host_loop.py` 里的策略
 （`--policy fixture` 或你自己的 `.py`）。所以**它只适合策略已经确定、能机械作答的场合**。
@@ -127,6 +130,9 @@ python scripts/parallel_run.py --out /tmp/runs --max-parallel 2 \
 `--policy scripts/explore_policy.py`（通用探索策略：找最像「提交/查询/执行」的按钮点一次就收，
 见 [exploring.md](exploring.md)）。真实业务页面基本都得自己写一份——照 `explore_policy.py`
 的接口 `answer(ask, ctx) -> dict` 抄，decide 的返回值记得包一层 `{"answers": {...}}`。
+
+**探索也能并行**：清单里给每一路 `"extra": ["--explore"]` 加各自的 `goal` + `url`，
+一个浏览器探一个页面。实测两路并行墙钟 9s（单路各 8.2s / 8.5s，串起来是 17s）。
 
 `--decider agent` 需要策略能答；如果这一轮要你（宿主模型）亲自逐步决策，
 那就别用这个脚本，改用下面第 4 节的子 agent 方式——每路一个你。

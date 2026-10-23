@@ -73,6 +73,22 @@
     return near.some(p => p && /dropdown/i.test(String(p.className || '')) &&
       !/menu/i.test(String(p.className || '')));
   };
+  // 弹层里的动作项：很多组件库的"删除/编辑/打印"是可点的 span/div（既没有 role 也没有 tabindex），
+  // 平时藏在弹层里，悬停某一行才出现。不识别它们，模型永远点不到这些动作——例如列表行右侧
+  // 「更多」展开后的「删除」。判据只用 HTML 语义，不认具体框架 class 名。
+  const POPUP_HOST = /(dropdown|popover|popup|render-box)/i;
+  const actionHost = e => {
+    if (NATIVE.includes(e.tagName) || e.getAttribute('role')) return false;
+    if (e.childElementCount > 0) return false;
+    const text = (e.textContent || '').trim();
+    if (!text || text.length > 20) return false;
+    let n = e.parentElement;
+    for (let i = 0; n && i < 6; i++, n = n.parentElement) {
+      const cls = String(n.className || '');
+      if (POPUP_HOST.test(cls) && !/menu/i.test(cls)) return true;  // 顶部导航菜单不算
+    }
+    return false;
+  };
 
   const roleOf = e => {
     const explicit = e.getAttribute('role');
@@ -154,13 +170,16 @@
     for (const e of root.querySelectorAll(selector)) candidates.push(e);
     for (const e of root.querySelectorAll('[tabindex]')) if (customRole(e)) candidates.push(e);
     for (const e of root.querySelectorAll('li')) if (optionHost(e)) candidates.push(e);
+    // 弹层里的动作项（更多 → 删除等）：只扫弹层容器，别把整页所有 span 都捡进来
+    for (const e of root.querySelectorAll('div,span')) if (actionHost(e)) candidates.push(e);
   }
   for (const e of candidates) {
     if (elements.length >= maxElements) break;
     if (e.type === 'hidden') continue;
     const fileEl = isFile(e);
     const native = roleOf(e);
-    const rname = native || customRole(e) || (optionHost(e) ? 'option' : null);
+    const action = !native && !customRole(e) && !optionHost(e) && actionHost(e);
+    const rname = native || customRole(e) || (optionHost(e) ? 'option' : (action ? 'button' : null));
     if (!rname) continue;
     const r = e.getBoundingClientRect();
     const onScreen = r.width > 0 && r.height > 0 && visible(e);

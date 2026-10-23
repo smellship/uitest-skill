@@ -223,6 +223,31 @@ uv run ui-agent run --plan-file "$PLAN" \
  "miss_reasons": {}, "kept_steps": 3, "saved_steps": 0, "evicted_steps": 0}
 ```
 
+## 全流程提速（同一用例 8 步实测）
+
+| 跑法 | 耗时 | 说明 |
+|---|---|---|
+| 首次：Jev 录制 | 157s | 其中模型 107s（68%），慢在 Jev 单次往返 |
+| 首次：宿主 agent 录制 | 45s | **录像同样可回放**（用它回放过，8 步全过、0 作答） |
+| 复跑：零 token 回放 | 44s | 零模型 |
+| 复跑：回放 + 落定等待调低 | 27s | `--extra="--settle-ms=300"` |
+
+三条结论：
+
+1. **首次不必等 Jev。** `--decider agent --supervisor agent --cache on --relearn` 跑出来的录像
+   和 Jev 录的等价（录像里 `source=agent`，回放验证过全命中）。宿主自己决策 45s 就能留下
+   可复用的录像；Jev 档留给「宿主不想管、又没录像」的场景。
+2. **落定等待是回放里最大的可砍项。** `settle()` 每个动作最多等 3 倍 `settle_ms`
+   （先等 budget、再等 domcontentloaded、再等 budget）。默认 700ms → 每动作最多 2.1s；
+   实测 `--extra="--settle-ms=300"` 把 44.2s 压到 27.2s 且 8 步全过。
+   注意 `--extra` 的值以 `--` 开头，**必须写成 `--extra="--settle-ms=300"` 这种等号形式**，
+   空格形式会被 argparse 当成新开关拒掉。页面慢的用例降之前自己验一遍。
+3. **多用例并行，墙钟取最慢一路而非相加。** `scripts/parallel_run.py` 或手工多进程，
+   每路一个独立 `--profile-dir`（同一个 profile 会被 Chromium 单实例锁挡住）。
+
+不可砍的下限：浏览器冷启动 + 登录约 10–20s/路（persistent context 启动 + 登录页渲染），
+是每一路的固定成本。`--mode ci` 可再省掉截图与逐步快照落盘的 IO（排障时别用）。
+
 `mode` 三值：`self-finalized`（断言全过，录像已定稿）、`agent-concluded`（模型说完了）、`missed`（对不上）。
 `write` 六值：`saved` / `kept` / `unconfirmed` / `evicted` / `no-change` / `not-written`。
 

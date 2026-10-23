@@ -106,12 +106,19 @@ def _fail(session: ReplaySession, reason: str) -> tuple[None, str]:
 def _context_ok(record: CachedDecision, state: State) -> bool:
     """页面身份守卫：地址按路径比（query 常挂易变串），标题只在两边都有时比。
 
-    DONE 豁免：它不指向任何元素，靠的是"这一步的断言已经成立"，而这一点由 runner
-    收到 DONE 后当场重评断言来保证——页面不对就判未通过，不会静默成功。反过来卡地址
-    会误伤最常见的场景：登录后跳到哪个页面是站点自己决定的（录的时候落控制台、回的
-    时候被 redirectUrl 送回业务页），地址一变，整步录像就整段作废。
+    自由动作（`FREEBAND_OPS`：DONE / WAIT / SCROLL_UP / SCROLL_DOWN / PRESS_KEY）豁免：
+    它们不指向任何元素，作用只取决于"放在哪一步"，不取决于当时在哪一页。豁免的理由是
+    两种误伤都真实发生过：
+
+    - DONE：靠的是"这一步的断言已经成立"，而这一点由 runner 收到后当场重评断言来保证。
+    - WAIT：录的时候页面还没跳完（比如点了登录，等 3 秒让站点自己跳转），所以这条 WAIT
+      的 url 记的是登录页；回放时它前面那条 CLICK 已经把页面送走，地址自然对不上——
+      以前这里判 wrong-context，把**整步录像连正确的前缀一起淘汰**（实测：手工录入用例
+      的第 1 步就这样从录像里消失，零 token 回放永久失效）。
+
+    页面身份的风险由**带目标的动作**兜底：它们仍受守卫约束，页面不对就不许按语义重定位。
     """
-    if record.operation == "DONE":
+    if record.operation in FREEBAND_OPS:
         return True
     if normalize_url(record.url, keep_query=False) != normalize_url(state.page.url, keep_query=False):
         return False

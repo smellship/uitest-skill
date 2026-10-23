@@ -158,6 +158,22 @@ def test_strict_probe_flags_signature_change(tmp_path):
     assert decision is not None
 
 
+def test_freeband_ops_replay_after_the_page_moved_on(tmp_path):
+    """点了登录再 WAIT 让站点自己跳：那条 WAIT 的 url 记的是登录页，回放时页面已经走掉了。
+
+    自由动作不指向元素，作用只取决于“放在哪一步”——以前这里判 wrong-context，会把整步
+    录像连正确的前缀一起淘汰（手工录入用例的第 1 步就这样消失，零 token 回放永久失效）。
+    """
+    for op in ("WAIT", "SCROLL_UP", "SCROLL_DOWN"):
+        session = session_with(tmp_path, [rec("CLICK"), rec(op, url="http://x/login")])
+        assert match_next(session, state_of())[1] == ""
+        decision, reason = match_next(session, state_of(url="http://x/next"))
+        assert reason == "" and decision is not None and decision.operation == op, op
+    # 带目标的动作不豁免：地址变了仍然不许按语义重定位（变体选择阶段就落空）
+    session = session_with(tmp_path, [rec("CLICK", url="http://x/login")])
+    assert match_next(session, state_of(url="http://x/next"))[1] == "no-variant"
+
+
 # --- Runner 端到端：零模型命中、失配停机、接力回填 ---
 
 

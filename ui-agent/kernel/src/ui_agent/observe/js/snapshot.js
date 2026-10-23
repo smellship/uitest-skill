@@ -49,6 +49,31 @@
   const selector = 'a[href],button,input,textarea,select,summary,[contenteditable="true"],' +
     roles.map(r => '[role="' + r + '"]').join(',');
 
+  // 自绘控件：很多组件库的下拉触发器和弹层选项都是普通 div/li，既没有 role 也不是原生标签，
+  // 但用户真能点。不识别它们，模型就永远看不见「发票类型」「发票状态」这类下拉，
+  // 只能去点旁边的输入框，然后卡住。
+  const NATIVE = ['BUTTON', 'A', 'SELECT', 'TEXTAREA', 'INPUT', 'SUMMARY'];
+  // 自绘触发器的形状：可聚焦、自身是"一个控件"而不是容器（tab 栏、导航条也带 tabindex，
+  // 但它们是又宽又扁的一排东西，用尺寸和子节点数排掉，别把它们当成下拉）。
+  const controlShaped = e => {
+    const b = e.getBoundingClientRect();
+    return b.width > 0 && b.width <= 520 && b.height > 0 && b.height <= 80 && e.childElementCount <= 4;
+  };
+  const customRole = e => {
+    if (e.getAttribute('role')) return '';
+    if (NATIVE.includes(e.tagName)) return '';
+    const ti = e.getAttribute('tabindex');
+    return ti !== null && ti !== '-1' && controlShaped(e) ? 'combobox' : '';
+  };
+  // 弹层里的选项：li 且直接挂在 "dropdown" 弹层里。菜单类（nav menu）不算，
+  // 否则整个顶部导航的十几种入口都会被当成选项灌进元素表。
+  const optionHost = e => {
+    if (e.tagName !== 'LI' || e.getAttribute('role')) return false;
+    const near = [e.parentElement, e.parentElement && e.parentElement.parentElement];
+    return near.some(p => p && /dropdown/i.test(String(p.className || '')) &&
+      !/menu/i.test(String(p.className || '')));
+  };
+
   const roleOf = e => {
     const explicit = e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
@@ -127,12 +152,15 @@
   const candidates = [];
   for (const root of roots()) {
     for (const e of root.querySelectorAll(selector)) candidates.push(e);
+    for (const e of root.querySelectorAll('[tabindex]')) if (customRole(e)) candidates.push(e);
+    for (const e of root.querySelectorAll('li')) if (optionHost(e)) candidates.push(e);
   }
   for (const e of candidates) {
     if (elements.length >= maxElements) break;
     if (e.type === 'hidden') continue;
     const fileEl = isFile(e);
-    const rname = roleOf(e);
+    const native = roleOf(e);
+    const rname = native || customRole(e) || (optionHost(e) ? 'option' : null);
     if (!rname) continue;
     const r = e.getBoundingClientRect();
     const onScreen = r.width > 0 && r.height > 0 && visible(e);
@@ -149,7 +177,10 @@
     const index = start + elements.length + 1;
     e.setAttribute(MARK, String(index));
     const item = {
-      index, role: rname, label: (fileEl ? fileLabel(e) : (nameOf(e) || rname)).slice(0, 200),
+      index, role: rname,
+      label: (fileEl ? fileLabel(e)
+        : (!native && rname === 'combobox' ? (ancestorLabel(e) || nameOf(e) || rname)
+          : (nameOf(e) || rname))).slice(0, 200),
       rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
       in_viewport: inViewport, occluded_by: occluded, disabled, operations: [],
     };
@@ -161,7 +192,8 @@
       item.accept = (e.getAttribute('accept') || '').slice(0, 200);
       item.multiple = e.multiple === true;
       if (!onScreen) item.hidden = true;
-    } else if (e.tagName === 'SELECT') item.value = [...e.selectedOptions].map(o => (o.label || o.text || '').trim()).join(', ');
+    } else if (!native && rname === 'combobox') item.value = (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    else if (e.tagName === 'SELECT') item.value = [...e.selectedOptions].map(o => (o.label || o.text || '').trim()).join(', ');
     else if (isPassword(e)) { item.secret = true; item.value = e.value ? '\u2022\u2022\u2022\u2022\u2022\u2022' : ''; }
     else if ('value' in e) item.value = String(e.value ?? '').slice(0, 300);
     else if (e.isContentEditable) item.value = e.innerText.trim().slice(0, 300);
